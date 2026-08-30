@@ -50,6 +50,26 @@ npm --prefix server test -- --test-name-pattern "Flächenschlüssel"
 Es gibt **keinen Linter** und keine Client-Tests. `npm run build` ist der einzige
 Typecheck-Pfad (`tsc --noEmit`).
 
+**Testlandschaft** unter `server/test/`:
+
+- [calc.test.js](server/test/calc.test.js) — Unit-Tests einzelner Engine-Funktionen.
+- [settlement-golden.test.js](server/test/settlement-golden.test.js) — **Golden Master**:
+  vergleicht das vollständige Abrechnungsergebnis cent-genau gegen eingefrorene Erwartungen
+  aus `fixtures/settlement/F01…F10/`. Jedes Fixture besteht aus `db.json` (Eingabe),
+  `expected.json` (Erwartung) und `README.md` (Handrechnung mit Spec-Referenz).
+- [invariants.test.js](server/test/invariants.test.js) — Eigenschaften, die für *jede*
+  Eingabe gelten: Integer-Cent, Verteilungsvollständigkeit, Determinismus,
+  Reihenfolgeunabhängigkeit, Zeitraumvollständigkeit, keine stillen Fallbacks,
+  deterministischer Tie-Break.
+- `server/testing/` — Helfer (Fixture-Laden, Normalisierung). Bewusst **außerhalb** von
+  `test/`, weil node:test dort jede `.js`-Datei als Testdatei einsammelt.
+
+Schlägt ein Golden-Master-Test fehl, ist das **kein Testproblem**: Entweder ist die Rechnung
+falsch geworden, oder die Erwartung war es. Zum Untersuchen
+`GOLDEN=diff npm --prefix server test` — das legt das Ist-Ergebnis als `expected.actual.json`
+neben die Golden-Datei, überschreibt sie aber nie. Bekannte Abweichungen und offene fachliche
+Punkte stehen in [docs/settlement-baseline-befunde.md](docs/settlement-baseline-befunde.md).
+
 ## Architektur
 
 Zwei getrennte npm-Pakete: `server/` (Express, ESM, kein TypeScript) und `client/` (React 19 +
