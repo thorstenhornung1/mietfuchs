@@ -1,4 +1,4 @@
-// Generiert server/src/embedded-client.js aus client/dist.
+// Generiert apps/server/src/embedded-client.js aus apps/client/dist.
 // Jede Frontend-Datei wird per Bun-Importattribut `with { type: "file" }` roh ins
 // Binary eingebettet (kein Base64-Bloat). Das erzeugte Modul wird NUR in der
 // gepackten Bun-Binary geladen (siehe index.js) — im Dev-Betrieb nie importiert,
@@ -8,8 +8,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const distDir = path.join(root, 'client', 'dist')
-const outFile = path.join(root, 'server', 'src', 'embedded-client.js')
+const distDir = path.join(root, 'apps', 'client', 'dist')
+const outFile = path.join(root, 'apps', 'server', 'src', 'embedded-client.js')
 
 // Minimaler MIME-Katalog für die im Frontend-Build vorkommenden Endungen.
 const MIME_MAP = {

@@ -1,6 +1,7 @@
 node_modules/
-client/dist/
-server/data/
-server/src/embedded-client.js
+apps/client/dist/
+apps/server/data/
+apps/server/src/embedded-client.js
 dist-bin/
 *.log
+*.bun-build

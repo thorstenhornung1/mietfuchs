@@ -9,7 +9,7 @@ services:
       - "3001:3001"
     volumes:
       # Persistente Daten (db.json + hochgeladene Belege) — überleben Container-Updates.
-      - mietfuchs-data:/app/server/data
+      - mietfuchs-data:/app/apps/server/data
     restart: unless-stopped
     # Macht den Host unter „host.docker.internal" erreichbar (für eine Ollama-Instanz auf dem
     # Host) — unter Docker Desktop ohnehin vorhanden, unter Linux per host-gateway nachgerüstet.

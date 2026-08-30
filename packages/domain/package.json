@@ -1,0 +1,20 @@
+{
+  "name": "@mietfuchs/domain",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "description": "Gemeinsame fachliche Regeln von Mietfuchs — Geld, Kalendertage, Schemas",
+  "exports": {
+    ".": "./src/index.ts",
+    "./money": "./src/money.ts",
+    "./dates": "./src/dates.ts"
+  },
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.0"
+  }
+}

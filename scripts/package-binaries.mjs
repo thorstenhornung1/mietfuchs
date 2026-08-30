@@ -1,5 +1,5 @@
 // Baut Mietfuchs zu eigenständigen Binaries (Windows/macOS/Linux) über Bun --compile.
-// Ablauf: Frontend bauen → Embed-Modul aus client/dist erzeugen → für jedes Ziel
+// Ablauf: Frontend bauen → Embed-Modul aus apps/client/dist erzeugen → für jedes Ziel
 // ein Binary kompilieren. Bun führt ESM + top-level await nativ aus und bettet die
 // per `with { type: "file" }` referenzierten Frontend-Dateien mit ein.
 //
@@ -38,7 +38,7 @@ const selected = only ? { [only]: TARGETS[only] } : TARGETS
 console.log('→ Frontend bauen (vite build) …')
 runShell(npm, ['run', 'build'])
 
-console.log('→ Embed-Modul aus client/dist erzeugen …')
+console.log('→ Embed-Modul aus apps/client/dist erzeugen …')
 run(process.execPath, ['scripts/embed-client.mjs'])
 
 const outDir = path.join(root, 'dist-bin')
@@ -50,7 +50,7 @@ for (const [name, { target, out }] of Object.entries(selected)) {
     'build',
     '--compile',
     `--target=${target}`,
-    'server/src/index.js',
+    'apps/server/src/index.js',
     '--outfile',
     path.join(outDir, out),
   ])

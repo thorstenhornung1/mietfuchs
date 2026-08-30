@@ -1,10 +1,11 @@
 {
-  "name": "mietfuchs-client",
+  "name": "@mietfuchs/client",
   "version": "0.2.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },
