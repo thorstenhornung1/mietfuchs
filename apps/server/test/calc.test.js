@@ -11,6 +11,7 @@ import {
   rentLedger,
   taxReport,
 } from '../src/calc.ts'
+import { settlementInput, ledgerInput } from '../testing/snapshot.js'
 
 // Szenario wie beim Nutzer: 3 Wohnungen, EG selbstbewohnt (nicht beteiligt),
 // zwei vermietete Wohnungen tragen alle Kosten.
@@ -38,10 +39,10 @@ test('overlapDays: volles Jahr, Teiljahr, kein Überlapp', () => {
   assert.equal(daysInYear(2024), 366)
 })
 
-test('Flächenschlüssel: Eigennutzung bleibt außen vor, Verteilung 90:60', () => {
+test('Flächenschlüssel: Eigennutzung bleibt außen vor, Verteilung 90:60', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   const a = s.statements.find((x) => x.tenancyId === 't2')
   const b = s.statements.find((x) => x.tenancyId === 't3')
   assert.equal(a.totalShareCents, 54000) // 90/150 von 900 €
@@ -49,10 +50,10 @@ test('Flächenschlüssel: Eigennutzung bleibt außen vor, Verteilung 90:60', () 
   assert.equal(s.landlord.totalCents, 0)
 })
 
-test('Personenschlüssel: 4 vs 3 Personen, centgenau ohne Rest', () => {
+test('Personenschlüssel: 4 vs 3 Personen, centgenau ohne Rest', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100001, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   const a = s.statements.find((x) => x.tenancyId === 't2')
   const b = s.statements.find((x) => x.tenancyId === 't3')
   assert.equal(a.totalShareCents + b.totalShareCents, 100001) // exakte Summe trotz krummer Teilung
@@ -61,12 +62,12 @@ test('Personenschlüssel: 4 vs 3 Personen, centgenau ohne Rest', () => {
   assert.ok(Math.abs(a.totalShareCents - 57143) <= 1)
 })
 
-test('Mieterwechsel: zeitanteilige Verteilung, Leerstand trägt der Vermieter', () => {
+test('Mieterwechsel: zeitanteilige Verteilung, Leerstand trägt der Vermieter', async () => {
   const db = makeDb()
   // Familie B zieht Ende März aus, Wohnung steht danach leer
   db.tenancies[1].end = '2025-03-31'
   db.costItems.push({ id: 'c1', year: 2025, category: 'Versicherung', description: 'Gebäudeversicherung', amountCents: 60000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   const a = s.statements.find((x) => x.tenancyId === 't2')
   const b = s.statements.find((x) => x.tenancyId === 't3')
   assert.equal(a.totalShareCents, 36000) // 90/150 volles Jahr
@@ -75,28 +76,28 @@ test('Mieterwechsel: zeitanteilige Verteilung, Leerstand trägt der Vermieter', 
   assert.ok(s.landlord.totalCents > 0)
 })
 
-test('Direktzuordnung geht vollständig an eine Wohnung', () => {
+test('Direktzuordnung geht vollständig an eine Wohnung', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Zähler OG links', amountCents: 12345, key: 'direct', directUnitId: 'u2' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 12345)
   assert.equal(s.statements.find((x) => x.tenancyId === 't3').totalShareCents, 0)
 })
 
-test('Vorauszahlungen und Saldo', () => {
+test('Vorauszahlungen und Saldo', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 300000, key: 'units' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   const a = s.statements.find((x) => x.tenancyId === 't2')
   assert.equal(a.prepaymentCents, 180000) // 150 € × 12
   assert.equal(a.totalShareCents, 150000) // halbe Kosten
   assert.equal(a.balanceCents, 30000) // 300 € Guthaben
 })
 
-test('Nicht umlagefähige Kosten trägt vollständig der Vermieter', () => {
+test('Nicht umlagefähige Kosten trägt vollständig der Vermieter', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Nicht umlagefähig', description: 'Dachreparatur', amountCents: 50000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 0)
   assert.equal(s.landlord.totalCents, 50000)
 })
@@ -135,10 +136,10 @@ test('Vorauszahlungen: Altformat (fester Monatsbetrag) wird weiter unterstützt'
   assert.equal(computePrepaymentCents(t, 2025).cents, 180000)
 })
 
-test('Kosten anderer Jahre werden ignoriert', () => {
+test('Kosten anderer Jahre werden ignoriert', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2024, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   assert.equal(s.totalCostsCents, 0)
 })
 
@@ -156,14 +157,14 @@ test('Personen-Staffel: Geburt im Jahr ändert Personentage', () => {
   assert.equal(personDaysInPeriod(t, '2024-01-01', '2024-12-31'), 732)
 })
 
-test('Personenschlüssel nutzt die Staffel in der Abrechnung', () => {
+test('Personenschlüssel nutzt die Staffel in der Abrechnung', async () => {
   const db = makeDb()
   db.tenancies[0].personHistory = [
     { from: '2020-01-01', persons: 4 },
     { from: '2025-07-01', persons: 5 },
   ]
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   const a = s.statements.find((x) => x.tenancyId === 't2')
   const b = s.statements.find((x) => x.tenancyId === 't3')
   const pdA = 181 * 4 + 184 * 5 // 1644
@@ -209,7 +210,7 @@ test('Zählerwechsel: Endstand alt + Startstand neu, kein negativer Verbrauch', 
   assert.equal(meterSegments(broken).warnings.length, 1)
 })
 
-test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', () => {
+test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', async () => {
   const db = makeDb()
   db.meters = [
     { id: 'm2', unitId: 'u2', type: 'kaltwasser', name: 'WZ OG links' },
@@ -222,39 +223,39 @@ test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', () => {
     { id: 'r4', meterId: 'm3', date: '2025-12-31', value: 40 },
   ]
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 60000)
   assert.equal(s.statements.find((x) => x.tenancyId === 't3').totalShareCents, 40000)
   assert.equal(s.landlord.totalCents, 0)
 })
 
-test('Verbrauchsschlüssel ohne Ablesungen: Warnung, Betrag an Vermieter', () => {
+test('Verbrauchsschlüssel ohne Ablesungen: Warnung, Betrag an Vermieter', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 50000, key: 'meter', meterType: 'kaltwasser' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   assert.equal(s.landlord.totalCents, 50000)
   assert.equal(s.warnings.length, 1)
 })
 
-test('§35a: Lohnanteil wird anteilig je Mieter ausgewiesen', () => {
+test('§35a: Lohnanteil wird anteilig je Mieter ausgewiesen', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Gartenpflege', amountCents: 60000, key: 'units', labor35aCents: 30000 })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   const a = s.statements.find((x) => x.tenancyId === 't2')
   assert.equal(a.totalShareCents, 30000) // halbe Kosten (2 Einheiten)
   assert.equal(a.total35aCents, 15000) // halber Lohnanteil
 })
 
-test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', () => {
+test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', async () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 290050, key: 'units' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(await settlementInput(db, 2025))
   const a = s.statements.find((x) => x.tenancyId === 't2')
   // 1450,25 € / 12 = 120,85 € → 121 €
   assert.equal(a.suggestedMonthlyCents, 12100)
 })
 
-test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der Reihe nach', () => {
+test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der Reihe nach', async () => {
   const db = {
     settings: {},
     units: [{ id: 'u1', name: 'OG links', areaM2: 90, participates: true }],
@@ -274,7 +275,7 @@ test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der 
       { id: 'p4', tenancyId: 't1', date: '2025-04-05', amountCents: 50000 },
     ],
   }
-  const l = rentLedger(db, 2025)
+  const l = rentLedger(await ledgerInput(db, 2025))
   const r = l.rows[0]
   assert.equal(r.months[0].sollCents, 100000) // 800 + 200 €
   assert.equal(r.sollYearCents, 1200000) // 12 × 1000 €
@@ -290,7 +291,7 @@ test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der 
   assert.equal(l.totals.openCents, 850000)
 })
 
-test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () => {
+test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', async () => {
   const db = {
     settings: {},
     units: [{ id: 'u1', name: 'OG', areaM2: 90, participates: true }],
@@ -304,7 +305,7 @@ test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () 
     ],
     payments: [],
   }
-  const l = rentLedger(db, 2025)
+  const l = rentLedger(await ledgerInput(db, 2025))
   const r = l.rows[0]
   assert.equal(r.months[0].sollCents, 0) // Januar vor Einzug
   assert.equal(r.months[0].status, 'paid') // kein Soll → gedeckt
@@ -313,7 +314,7 @@ test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () 
   assert.equal(r.openMonths, 6) // Juli–Dez unbezahlt
 })
 
-test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, Überschuss', () => {
+test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, Überschuss', async () => {
   const db = {
     settings: {},
     units: [
@@ -339,7 +340,7 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
       { id: 'c4', year: 2024, category: 'Grundsteuer', description: 'Vorjahr', amountCents: 99999, key: 'units' },
     ],
   }
-  const r = taxReport(db, 2025)
+  const r = taxReport(await ledgerInput(db, 2025))
   assert.equal(r.income.baseRentSollCents, 960000) // 12 × 800 €
   assert.equal(r.income.prepaymentSollCents, 240000) // 12 × 200 €
   assert.equal(r.income.sollCents, 1200000)

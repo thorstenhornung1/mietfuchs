@@ -12,12 +12,13 @@ import type {
   ConsumptionOverviewRow,
   CostItem,
   CostKey,
-  Db,
+  LedgerInput,
   Meter,
   PersonEntry,
   Reading,
   RentLedger,
   RentMonth,
+  SettlementInput,
   SettlementResult,
   Statement,
   Tenancy,
@@ -139,11 +140,11 @@ export function consumptionInPeriod(readings: Reading[], from: string, to: strin
 }
 
 // Jahresübersicht für die Zähler-Seite: Verbrauch pro Zähler + Warnungen
-export function consumptionOverview(db: Db, year: number): ConsumptionOverviewRow[] {
-  const from = `${year}-01-01`
-  const to = `${year}-12-31`
-  return (db.meters ?? []).map((m) => {
-    const readings = (db.readings ?? []).filter((r) => r.meterId === m.id)
+export function consumptionOverview(input: SettlementInput): ConsumptionOverviewRow[] {
+  const from = `${input.year}-01-01`
+  const to = `${input.year}-12-31`
+  return input.meters.map((m) => {
+    const readings = input.readings.filter((r) => r.meterId === m.id)
     const { warnings } = meterSegments(readings)
     return {
       meterId: m.id,
@@ -210,13 +211,14 @@ function rateAtMonth(schedule: readonly { from: string; monthlyCents: Cents }[],
 // Vorauszahlung) je Monat, sowie die tatsächlich eingegangenen Zahlungen des Jahres.
 // Zahlungen werden den Monaten in Reihenfolge (Jan → Dez) zugeteilt: so spiegelt der
 // Status („bezahlt / teilweise / offen") wider, bis zu welchem Monat das Konto gedeckt ist.
-export function rentLedger(db: Db, year: number): RentLedger {
+export function rentLedger(input: LedgerInput): RentLedger {
+  const { year } = input
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
-  const unitById = new Map(db.units.map((u) => [u.id, u]))
-  const payments = db.payments ?? []
+  const unitById = new Map(input.units.map((u) => [u.id, u]))
+  const payments = input.payments
 
-  const rows = (db.tenancies ?? [])
+  const rows = input.tenancies
     .filter((t) => overlapDays(t.start, t.end, year) > 0)
     .map((t) => {
       const baseSchedule = Array.isArray(t.baseRents) ? t.baseRents : []
@@ -321,15 +323,16 @@ const ANLAGE_V_GROUP_ORDER: string[] = [
 // der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
 // Werbungskosten folgen dem Abflussprinzip (im Jahr gebuchte Kosten), die Einnahmen
 // werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
-export function taxReport(db: Db, year: number): TaxReport {
-  const ledger = rentLedger(db, year)
+export function taxReport(input: LedgerInput): TaxReport {
+  const { year } = input
+  const ledger = rentLedger(input)
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
   const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
   const sollCents = ledger.totals.sollYearCents
   const paidCents = ledger.totals.paidYearCents
 
   // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren
-  const items = (db.costItems ?? []).filter((c) => c.year === year)
+  const items = input.costItems.filter((c) => c.year === year)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   for (const item of items) {
     const group = ANLAGE_V_GROUP[item.category] ?? 'Sonstige Werbungskosten'
@@ -359,7 +362,7 @@ export function taxReport(db: Db, year: number): TaxReport {
   const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
 
   // Flächenanteil der vermieteten (beteiligten) Einheiten — Hinweis bei gemischter Nutzung
-  const allUnits = db.units ?? []
+  const allUnits = input.units
   const totalArea = allUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
   const rentedArea = allUnits.filter((u) => u.participates).reduce((a, u) => a + (u.areaM2 || 0), 0)
   const rentedAreaShare = totalArea > 0 ? rentedArea / totalArea : 1
@@ -416,24 +419,25 @@ type ActiveTenancy = Tenancy & { days: number; unit: Unit }
 /** Verbrauchsbasis eines Zählertyps über alle Wohnungszähler hinweg. */
 type ConsumptionByType = { meters: Meter[]; basis: number; perUnit: Map<string, number> }
 
-export function computeSettlement(db: Db, year: number): SettlementResult {
+export function computeSettlement(input: SettlementInput): SettlementResult {
+  const { year } = input
   const diy = daysInYear(year)
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
-  const unitById = new Map(db.units.map((u) => [u.id, u]))
-  const partUnits = db.units.filter((u) => u.participates)
+  const unitById = new Map(input.units.map((u) => [u.id, u]))
+  const partUnits = input.units.filter((u) => u.participates)
   const basisArea = partUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
 
   // Mietverhältnisse mit Überlappung im Jahr
-  const tenancies = db.tenancies
+  const tenancies = input.tenancies
     .map((t) => ({ ...t, days: overlapDays(t.start, t.end, year), unit: unitById.get(t.unitId) }))
     .filter((t): t is ActiveTenancy => t.days > 0 && t.unit !== undefined)
   const partTenancies = tenancies.filter((t) => t.unit.participates)
   const basisPersonDays = partTenancies.reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0)
 
   // Verbrauch je Zählertyp vorbereiten (nur Wohnungszähler bilden die Verteilbasis)
-  const allMeters = db.meters ?? []
-  const allReadings = db.readings ?? []
+  const allMeters = input.meters
+  const allReadings = input.readings
   const meterTypes = [...new Set(allMeters.filter((m) => m.unitId).map((m) => m.type))]
   const consumptionByType: Record<string, ConsumptionByType> = {}
   for (const type of meterTypes) {
@@ -476,7 +480,9 @@ export function computeSettlement(db: Db, year: number): SettlementResult {
 
   const landlordRows = []
   const warnings = []
-  const items = db.costItems.filter((c) => c.year === year)
+  // Das Repository liefert bereits nur die Positionen des Jahres; die Prüfung bleibt als
+  // Absicherung stehen, damit die Engine auch für von Hand gebaute Snapshots richtig rechnet.
+  const items = input.costItems.filter((c) => c.year === year)
   let totalCostsCents = 0
 
   for (const item of items) {

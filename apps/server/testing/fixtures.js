@@ -8,6 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeSettlement, consumptionOverview } from '../src/calc.ts'
 import { normalizeSettlement, normalizeConsumption } from './normalize.js'
+import { repositoryFor } from './snapshot.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const FIXTURE_DIR = path.join(__dirname, '..', 'test', 'fixtures', 'settlement')
@@ -36,10 +37,13 @@ export function loadFixtures() {
 
 // Die vollständige, normalisierte Momentaufnahme eines Abrechnungsjahres —
 // der Umfang, der cent-genau eingefroren wird (Spec §55).
-export function actualOf(db, year) {
+export async function actualOf(db, year) {
+  // Bewusst über das Repository: Der Golden Master prüft damit den ganzen Weg
+  // Persistenz → Snapshot → Engine, nicht nur die Engine (Spec §35).
+  const input = await repositoryFor(db).loadSettlementInput(year)
   return {
     year,
-    settlement: normalizeSettlement(computeSettlement(db, year)),
-    consumption: normalizeConsumption(consumptionOverview(db, year)),
+    settlement: normalizeSettlement(computeSettlement(input)),
+    consumption: normalizeConsumption(consumptionOverview(input)),
   }
 }

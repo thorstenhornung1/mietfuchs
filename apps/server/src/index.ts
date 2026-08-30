@@ -9,6 +9,7 @@ import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.ts'
 import { errorMessage } from './errors.ts'
+import { LegacyJsonRepository } from './persistence/legacy-json-repository.ts'
 import { CRUD_COLLECTIONS } from '@mietfuchs/domain'
 import type { CrudCollection, Db, Identifiable } from '@mietfuchs/domain'
 
@@ -30,6 +31,13 @@ function setCollection(db: Db, name: CrudCollection, items: Identifiable[]): voi
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// Die Berechnungen lesen ihre Daten ausschließlich über das Repository (Spec §35):
+//   Persistenz → Repository → Snapshot → Calc Core → Ergebnis
+// Heute liegt dahinter noch die db.json; mit #3 treten SQLite und PostgreSQL an ihre Stelle,
+// ohne dass Engine oder Routen das bemerken.
+const repository = new LegacyJsonRepository(getDb)
+
 const app = express()
 app.use(express.json())
 
@@ -95,17 +103,17 @@ for (const coll of CRUD_COLLECTIONS) {
 
 // ---------- Abrechnung ----------
 // Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
-app.get('/api/settlement/:year', (req, res) => {
+app.get('/api/settlement/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const closed = (getDb().closedSettlements ?? []).find((c) => c.year === year)
   if (closed) return res.json({ ...closed.settlement, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt ?? null } })
-  res.json({ ...computeSettlement(getDb(), year), closed: null })
+  res.json({ ...computeSettlement(await repository.loadSettlementInput(year)), closed: null })
 })
 
 // Abrechnung abschließen: aktuellen Berechnungsstand einfrieren. Spätere Änderungen an
 // Kosten/Stammdaten verändern eine bereits verschickte Abrechnung dann nicht mehr still.
-app.post('/api/settlement/:year/close', (req, res) => {
+app.post('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const db = getDb()
@@ -117,7 +125,7 @@ app.post('/api/settlement/:year/close', (req, res) => {
     year,
     closedAt: new Date().toISOString(),
     sentAt: req.body?.sentAt ?? null,
-    settlement: computeSettlement(db, year),
+    settlement: computeSettlement(await repository.loadSettlementInput(year)),
   })
   save()
   res.status(201).json({ ok: true })
@@ -144,24 +152,24 @@ app.delete('/api/settlement/:year/close', (req, res) => {
   res.json({ ok: true })
 })
 
-app.get('/api/consumption/:year', (req, res) => {
+app.get('/api/consumption/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(consumptionOverview(getDb(), year))
+  res.json(consumptionOverview(await repository.loadSettlementInput(year)))
 })
 
 // Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
-app.get('/api/rentledger/:year', (req, res) => {
+app.get('/api/rentledger/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(rentLedger(getDb(), year))
+  res.json(rentLedger(await repository.loadLedgerInput(year)))
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss
-app.get('/api/taxreport/:year', (req, res) => {
+app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(taxReport(getDb(), year))
+  res.json(taxReport(await repository.loadLedgerInput(year)))
 })
 
 // ---------- Belege & KI-Auswertung ----------
