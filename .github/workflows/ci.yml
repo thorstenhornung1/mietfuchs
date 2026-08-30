@@ -16,10 +16,14 @@ jobs:
           cache: npm
       # npm install (nicht ci): postinstall installiert Server + Client mit.
       - run: npm install
+      # tsc --noEmit über Domain, Server und Client. Der Server läuft ohne Build-Schritt:
+      # Node führt die TypeScript-Quellen über Type Stripping aus, tsc prüft sie nur.
+      - name: Typecheck (Domain, Server, Client)
+        run: npm run typecheck
       # Tests der Berechnungs-Engine (node:test): Unit-Tests, Golden Master und Invarianten.
       # Ein Fehlschlag hier bedeutet immer eine fachliche Verhaltensänderung der Abrechnung
       # — siehe docs/settlement-baseline-befunde.md und die PR-Checkliste in CLAUDE.md.
       - name: Tests (Unit, Golden Master, Invarianten)
         run: npm test
-      # Typecheck (tsc --noEmit) + Vite-Build
+      # Vite-Build des Frontends
       - run: npm run build

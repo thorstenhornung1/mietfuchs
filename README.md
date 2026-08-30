@@ -145,12 +145,12 @@ Vorschläge — übernommen wird erst nach manueller Prüfung.
 
 Alles liegt in einem `data/`-Ordner (`db.json` + hochgeladene Belege in `uploads/`).
 Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start aus dem
-Quellcode unter `server/data/`. Backup = diesen Ordner kopieren.
+Quellcode unter `apps/server/data/`. Backup = diesen Ordner kopieren.
 
 ## Produktivbetrieb ohne Dev-Server
 
 ```powershell
-npm run build      # baut das Frontend nach client/dist
+npm run build      # baut das Frontend nach apps/client/dist
 npm start          # Server liefert App + API auf http://localhost:3001
 ```
 
@@ -173,7 +173,7 @@ Ohne Compose geht es auch direkt:
 
 ```bash
 docker build -t mietfuchs .
-docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs mietfuchs
+docker run -d -p 3001:3001 -v mietfuchs-data:/app/apps/server/data --name mietfuchs mietfuchs
 ```
 
 Die optionale KI-Belegauswertung erwartet eine Ollama-Instanz. Läuft sie auf dem Host,

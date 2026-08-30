@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noEmit": true,
+    // Node führt die Quellen über Type Stripping aus: nur löschbare TypeScript-Syntax,
+    // also keine enums, keine Namespaces, keine Parameter-Properties.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true
+  },
+  // noUncheckedIndexedAccess ist hier bewusst aus: Die migrierte Engine indiziert an vielen
+  // Stellen Arrays, deren Länge sie selbst sicherstellt. Das Domain-Package, in dem der Code
+  // neu entsteht, fährt die strengere Einstellung. Beim Umzug der Engine in die Domäne
+  // (Repository-Foundation, #3) wird nachgezogen.
+  "include": ["src"]
+}

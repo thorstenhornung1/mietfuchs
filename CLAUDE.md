@@ -16,74 +16,92 @@ nachschlagen, nicht danach.** Grundlage sind die vier Spezifikationen in [docs/]
 
 ## Commands
 
-Vom Repo-Root (npm-Workspaces-artiges Setup ohne echte Workspaces — `postinstall` installiert
-Server und Client mit):
+Vom Repo-Root (npm-Workspaces: `apps/*` und `packages/*` werden in einem Durchgang installiert):
 
 ```powershell
-npm install        # installiert Root + server + client
+npm install        # installiert alle Workspaces
 npm run dev        # concurrently: Server (Port 3001) + Vite (Port 5173)
-npm test           # Tests der Berechnungs-Engine (delegiert an server)
-npm run build      # baut das Frontend nach client/dist (tsc --noEmit + vite build)
+npm test           # Tests von Domain-Package und Server (node:test)
+npm run typecheck  # tsc --noEmit über Domain, Server und Client
+npm run build      # baut das Frontend nach apps/client/dist (tsc --noEmit + vite build)
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
 ```
+
+Ein einzelnes Paket ansprechen: `npm run <skript> -w @mietfuchs/{domain,server,client}`.
 
 **Eigenständige Binaries** (für Endanwender ohne Node): [scripts/package-binaries.mjs](scripts/package-binaries.mjs)
 kompiliert Server + eingebettetes Frontend per **Bun `--compile`** zu je einer Datei pro
 Plattform (Windows/macOS-Intel/macOS-ARM/Linux) in `dist-bin/`. `node scripts/package-binaries.mjs win`
 baut nur ein Ziel. Bun wird gewählt, weil der Server ESM ist und `pdfjs-dist` top-level await
 nutzt — beides kann pkg/SEA nicht bündeln. Das Frontend wird beim Build über
-[scripts/embed-client.mjs](scripts/embed-client.mjs) aus `client/dist` in das generierte
-(gitignorierte) Modul `server/src/embedded-client.js` eingebettet (Bun-Importattribut
+[scripts/embed-client.mjs](scripts/embed-client.mjs) aus `apps/client/dist` in das generierte
+(gitignorierte) Modul `apps/server/src/embedded-client.js` eingebettet (Bun-Importattribut
 `with { type: 'file' }`) und im gepackten Betrieb daraus ausgeliefert. In der Binary erkennt der
 Server den gepackten Modus an `globalThis.Bun`: Daten landen dann in `data/` **neben der
-ausführbaren Datei** (nicht in `server/data`), und der Standard-Browser wird automatisch geöffnet.
+ausführbaren Datei** (nicht in `apps/server/data`), und der Standard-Browser wird automatisch geöffnet.
 Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml) baut bei einem
 `v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release.
 
 Einzelnen Test ausführen (node:test, kein Framework):
 
 ```powershell
-npm --prefix server test -- --test-name-pattern "Flächenschlüssel"
+npm run test -w @mietfuchs/server -- --test-name-pattern "Flächenschlüssel"
 ```
 
-Es gibt **keinen Linter** und keine Client-Tests. `npm run build` ist der einzige
-Typecheck-Pfad (`tsc --noEmit`).
+Es gibt **keinen Linter** und keine Client-Tests. Typecheck läuft über `npm run typecheck`
+(`tsc --noEmit` für alle drei Pakete); `npm run build` typecheckt den Client zusätzlich.
 
-**Testlandschaft** unter `server/test/`:
+**Testlandschaft** unter `packages/domain/test/` und `apps/server/test/`:
 
-- [calc.test.js](server/test/calc.test.js) — Unit-Tests einzelner Engine-Funktionen.
-- [settlement-golden.test.js](server/test/settlement-golden.test.js) — **Golden Master**:
+- [packages/domain/test/](packages/domain/test/) — `money.ts` und `dates.ts`: Integer-Cent
+  (Invariante 17), Kalendertag ≠ Zeitstempel (Invariante 102), inklusive Zeitraumgrenzen (§57),
+  Kategorie-Zuordnung (Invariante 20).
+- [calc.test.js](apps/server/test/calc.test.js) — Unit-Tests einzelner Engine-Funktionen.
+- [settlement-golden.test.js](apps/server/test/settlement-golden.test.js) — **Golden Master**:
   vergleicht das vollständige Abrechnungsergebnis cent-genau gegen eingefrorene Erwartungen
   aus `fixtures/settlement/F01…F10/`. Jedes Fixture besteht aus `db.json` (Eingabe),
   `expected.json` (Erwartung) und `README.md` (Handrechnung mit Spec-Referenz).
-- [invariants.test.js](server/test/invariants.test.js) — Eigenschaften, die für *jede*
+- [invariants.test.js](apps/server/test/invariants.test.js) — Eigenschaften, die für *jede*
   Eingabe gelten: Integer-Cent, Verteilungsvollständigkeit, Determinismus,
   Reihenfolgeunabhängigkeit, Zeitraumvollständigkeit, keine stillen Fallbacks,
   deterministischer Tie-Break.
-- `server/testing/` — Helfer (Fixture-Laden, Normalisierung). Bewusst **außerhalb** von
+- `apps/server/testing/` — Helfer (Fixture-Laden, Normalisierung). Bewusst **außerhalb** von
   `test/`, weil node:test dort jede `.js`-Datei als Testdatei einsammelt.
 
 Schlägt ein Golden-Master-Test fehl, ist das **kein Testproblem**: Entweder ist die Rechnung
 falsch geworden, oder die Erwartung war es. Zum Untersuchen
-`GOLDEN=diff npm --prefix server test` — das legt das Ist-Ergebnis als `expected.actual.json`
+`GOLDEN=diff npm run test -w @mietfuchs/server` — das legt das Ist-Ergebnis als `expected.actual.json`
 neben die Golden-Datei, überschreibt sie aber nie. Bekannte Abweichungen und offene fachliche
 Punkte stehen in [docs/settlement-baseline-befunde.md](docs/settlement-baseline-befunde.md).
 
 ## Architektur
 
-Zwei getrennte npm-Pakete: `server/` (Express, ESM, kein TypeScript) und `client/` (React 19 +
-Vite + TypeScript). Im Dev proxyt Vite `/api` und `/uploads` an `localhost:3001`
-([client/vite.config.ts](client/vite.config.ts)); im Produktivbuild liefert der Express-Server
-das statische `client/dist` selbst aus ([server/src/index.js](server/src/index.js)).
+Monorepo aus drei npm-Workspaces (Spec §38):
 
-**Persistenz**: eine einzige JSON-Datei `server/data/db.json`, atomar geschrieben (Temp +
-rename) über [server/src/store.js](server/src/store.js). Belege liegen in `server/data/uploads/`.
+```text
+packages/domain/   gemeinsame fachliche Regeln (TypeScript): money.ts, dates.ts
+apps/server/       Express, ESM, TypeScript
+apps/client/       React 19 + Vite + TypeScript
+```
+
+Das Domain-Package wird **als TypeScript-Quelle** ausgeliefert, ohne Build-Schritt: Node führt
+`.ts` über Type Stripping direkt aus (daher `engines.node >= 22.18`), Bun kompiliert sie in die
+Binary, Vite bündelt sie. `tsc` ist reiner Typechecker (`--noEmit`), und
+`erasableSyntaxOnly` verbietet Syntax, die Node nicht wegstreichen kann — also keine `enum`,
+keine Namespaces, keine Parameter-Properties.
+
+Im Dev proxyt Vite `/api` und `/uploads` an `localhost:3001`
+([apps/client/vite.config.ts](apps/client/vite.config.ts)); im Produktivbuild liefert der Express-Server
+das statische `apps/client/dist` selbst aus ([apps/server/src/index.ts](apps/server/src/index.ts)).
+
+**Persistenz**: eine einzige JSON-Datei `apps/server/data/db.json`, atomar geschrieben (Temp +
+rename) über [apps/server/src/store.ts](apps/server/src/store.ts). Belege liegen in `apps/server/data/uploads/`.
 Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — Schema-Migrationen
-älterer `db.json` passieren imperativ in `load()` in store.js (z. B. fester Monatsbetrag →
+älterer `db.json` passieren imperativ in `load()` in store.ts (z. B. fester Monatsbetrag →
 Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration ergänzen.
 
-**API** ([server/src/index.js](server/src/index.js)): generische CRUD-Routen werden in einer
+**API** ([apps/server/src/index.ts](apps/server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
 Löschen einer `unit` bzw. `meter` kaskadiert manuell auf abhängige Datensätze (auch `payments`
 beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
@@ -95,7 +113,7 @@ Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip)
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
 /api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung.
 
-**Berechnungs-Engine** ([server/src/calc.js](server/src/calc.js)) — das Herzstück, hier liegt
+**Berechnungs-Engine** ([apps/server/src/calc.ts](apps/server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats — Gleitkomma-Fehler vermeiden.
 - Centgenaue Verteilung per **Hare/largest-remainder** (`largestRemainder`). Schöpfen die
@@ -122,31 +140,33 @@ die ganze fachliche Komplexität:
   vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester
   Anlage-V-Zeilennummern; keine automatische Eigennutzungs-Aufteilung (nur Hinweis).
 
-Der Server kennt **keine Domänentypen als Code** — die maßgebliche Typdefinition des gesamten
-Datenmodells steht in [client/src/types.ts](client/src/types.ts) (Unit, Tenancy, Meter,
-Reading, CostItem, Settings, Settlement …). Server und Client müssen hier konsistent bleiben.
-Die `KEY_LABELS` existieren bewusst doppelt (calc.js liefert UI-Strings im Settlement, types.ts
-hat eigene Labels für die Eingabe-Oberfläche).
+Das **Datenmodell** steht in [packages/domain/src/model.ts](packages/domain/src/model.ts)
+(Unit, Tenancy, Meter, Reading, CostItem, Settings, Db, Settlement …) und wird von Server und
+Client konsumiert; [apps/client/src/types.ts](apps/client/src/types.ts) reicht es nur weiter
+und ergänzt reine Anzeige-Beschriftungen. Die `KEY_LABELS` existieren bewusst doppelt
+(calc.ts liefert UI-Strings im Settlement, types.ts hat eigene Labels für die
+Eingabe-Oberfläche).
 
-**KI-Belegauswertung** ([server/src/extract.js](server/src/extract.js)): optional, gegen eine
+**KI-Belegauswertung** ([apps/server/src/extract.ts](apps/server/src/extract.ts)): optional, gegen eine
 lokale **Ollama**-Instanz (URL/Modell aus den Settings). PDF → Textebene via `pdf-parse`;
 Scans ohne (brauchbare) Textebene werden per `pdf-to-img` seitenweise als PNG gerendert und
 ans Vision-Modell gegeben. Bilder → Base64 (braucht Vision-Modell). Erzwingt
 strukturiertes JSON über `format: SCHEMA`. Die KI macht nur Vorschläge — Übernahme erst nach
-manueller Prüfung. Die Kategorie-Enums in extract.js und in `CATEGORIES`/`matchCategory` in
-types.ts müssen zusammenpassen.
+manueller Prüfung. Die Kategorienliste kommt aus
+[packages/domain/src/classifications.ts](packages/domain/src/classifications.ts) und steht
+damit nur noch an einer Stelle (früher doppelt in extract.js und types.ts).
 
-**Client** ([client/src/](client/src/)): React ohne Router — `App.tsx` schaltet per State
+**Client** ([apps/client/src/](apps/client/src/)): React ohne Router — `App.tsx` schaltet per State
 zwischen den Seiten (`pages/`: Cockpit, Schnellerfassung, Zaehler, Kosten, Mietkonto,
 Abrechnung, Uebersicht/Kostenvergleich, Steuer, Stammdaten, Belege, Einstellungen), gruppiert
 nach Arbeitsphase in der Sidebar (das Abrechnungsjahr liegt zentral im `YearProvider`,
-[client/src/year.tsx](client/src/year.tsx)). Dark Mode über `data-theme` auf `<html>` + CSS-Variablen (Umschalter in der
-Sidebar, Druck ist immer hell); PWA-Manifest und Icons liegen in `client/public/` (Icons
-erzeugt `server/scripts/make-icons.mjs`).
+[apps/client/src/year.tsx](apps/client/src/year.tsx)). Dark Mode über `data-theme` auf `<html>` + CSS-Variablen (Umschalter in der
+Sidebar, Druck ist immer hell); PWA-Manifest und Icons liegen in `apps/client/public/` (Icons
+erzeugt `apps/server/scripts/make-icons.mjs`).
 Zentraler Fetch-Wrapper `api()` und Geld-/Datums-Helfer (`parseEuro`, `fmtEuro`, `fmtDate`) in
-[client/src/api.ts](client/src/api.ts). Druck/PDF läuft über die Browser-Druckfunktion;
+[apps/client/src/api.ts](apps/client/src/api.ts). Druck/PDF läuft über die Browser-Druckfunktion;
 hochgeladene Belege werden für den Druck per **pdf.js** auf Canvas gerendert
-([client/src/pdfPreview.ts](client/src/pdfPreview.ts)) — die zugehörigen pdf.js-WASM/Font-
+([apps/client/src/pdfPreview.ts](apps/client/src/pdfPreview.ts)) — die zugehörigen pdf.js-WASM/Font-
 Assets werden im Build via `vite-plugin-static-copy` nach `dist/pdfjs/` kopiert.
 
 ## Konventionen & Fallstricke
@@ -154,7 +174,7 @@ Assets werden im Build via `vite-plugin-static-copy` nach `dist/pdfjs/` kopiert.
 - **Geld immer in Cent als Integer.** Eingabe-Parsing (deutsche + technische Schreibweise) über
   `parseEuro`; Ausgabe über `fmtEuro`.
 - **Datums-Logik** rechnet in UTC mit inklusiven Grenzen — beim Anfassen von calc.js die
-  bestehende Konvention beibehalten und gegen [server/test/calc.test.js](server/test/calc.test.js)
+  bestehende Konvention beibehalten und gegen [apps/server/test/calc.test.js](apps/server/test/calc.test.js)
   prüfen.
 - Der Server nutzt bewusst **`NKA_PORT`** statt `PORT` (generische `PORT`-Variablen von
   Preview-Tools kollidieren sonst mit Vite).

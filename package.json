@@ -21,14 +21,18 @@
     "anlage-v"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18"
   },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "postinstall": "npm --prefix server install && npm --prefix client install",
-    "dev": "concurrently -n server,client -c blue,green \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
-    "test": "npm --prefix server test",
-    "build": "npm --prefix client run build",
-    "start": "npm --prefix server start",
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w @mietfuchs/server\" \"npm run dev -w @mietfuchs/client\"",
+    "test": "npm run test -w @mietfuchs/domain -w @mietfuchs/server",
+    "typecheck": "npm run typecheck -w @mietfuchs/domain -w @mietfuchs/server -w @mietfuchs/client",
+    "build": "npm run build -w @mietfuchs/client",
+    "start": "npm run start -w @mietfuchs/server",
     "package": "node scripts/package-binaries.mjs"
   },
   "devDependencies": {
