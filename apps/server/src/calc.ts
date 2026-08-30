@@ -1,7 +1,32 @@
 // Berechnungs-Engine für die Nebenkostenabrechnung.
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
+//
+// Diese Datei ist mit #16 nach TypeScript überführt worden — typisiert, fachlich
+// unverändert (Spec §35: „Die bestehende Berechnungsengine wird nicht umgeschrieben").
+// Der Golden Master unter test/fixtures/settlement/ belegt das cent-genau.
 
-export const KEY_LABELS = {
+import { METER_TYPE_LABELS } from '@mietfuchs/domain'
+import type {
+  Cents,
+  CivilDate,
+  ConsumptionOverviewRow,
+  CostItem,
+  CostKey,
+  Db,
+  Meter,
+  PersonEntry,
+  Reading,
+  RentLedger,
+  RentMonth,
+  SettlementResult,
+  Statement,
+  Tenancy,
+  TaxExpenseCategory,
+  TaxReport,
+  Unit,
+} from '@mietfuchs/domain'
+
+export const KEY_LABELS: Record<CostKey, string> = {
   area: 'Wohnfläche',
   persons: 'Personenzahl',
   units: 'Wohneinheiten',
@@ -11,17 +36,22 @@ export const KEY_LABELS = {
 
 const MS_DAY = 86400000
 
-function toUTC(iso) {
-  const [y, m, d] = iso.split('-').map(Number)
+function toUTC(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number]
   return Date.UTC(y, m - 1, d)
 }
 
-export function daysInYear(year) {
+export function daysInYear(year: number): number {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 366 : 365
 }
 
 // Überlappung zweier Zeiträume in Tagen (alle Grenzen inklusiv, ISO-Strings, end=null = offen)
-function rangeOverlapDays(aStart, aEnd, bStart, bEnd) {
+function rangeOverlapDays(
+  aStart: string,
+  aEnd: string | null,
+  bStart: string,
+  bEnd: string | null,
+): number {
   const s = Math.max(toUTC(aStart), toUTC(bStart))
   const e = Math.min(aEnd ? toUTC(aEnd) : Infinity, bEnd ? toUTC(bEnd) : Infinity)
   if (e < s) return 0
@@ -29,13 +59,13 @@ function rangeOverlapDays(aStart, aEnd, bStart, bEnd) {
 }
 
 // Belegte Tage eines Mietverhältnisses innerhalb des Abrechnungsjahres
-export function overlapDays(start, end, year) {
+export function overlapDays(start: string, end: string | null, year: number): number {
   return rangeOverlapDays(start, end, `${year}-01-01`, `${year}-12-31`)
 }
 
 // ---------- Personen-Staffel ----------
 
-function personHistoryOf(tenancy) {
+function personHistoryOf(tenancy: Tenancy): PersonEntry[] {
   const h = Array.isArray(tenancy.personHistory) && tenancy.personHistory.length
     ? tenancy.personHistory
     : [{ from: tenancy.start, persons: tenancy.persons ?? 1 }]
@@ -43,7 +73,7 @@ function personHistoryOf(tenancy) {
 }
 
 // Personentage eines Mietverhältnisses im Zeitraum [from, to] (inklusiv)
-export function personDaysInPeriod(tenancy, from, to) {
+export function personDaysInPeriod(tenancy: Tenancy, from: string, to: string): number {
   const h = personHistoryOf(tenancy)
   let sum = 0
   for (let i = 0; i < h.length; i++) {
@@ -58,7 +88,7 @@ export function personDaysInPeriod(tenancy, from, to) {
 }
 
 // Aktuelle Personenzahl zu einem Stichtag
-export function personsAt(tenancy, dateIso) {
+export function personsAt(tenancy: Tenancy, dateIso: string): number {
   const h = personHistoryOf(tenancy)
   let p = h[0]?.persons ?? 0
   for (const e of h) if (e.from <= dateIso) p = e.persons
@@ -67,13 +97,16 @@ export function personsAt(tenancy, dateIso) {
 
 // ---------- Zähler & Verbrauch ----------
 
+/** Verbrauch zwischen zwei aufeinanderfolgenden Ablesungen. */
+type MeterSegment = { from: CivilDate; to: CivilDate; delta: number; days: number }
+
 // Ablesungen eines Zählers → Verbrauchssegmente zwischen aufeinanderfolgenden Ablesungen.
 // Konvention: eine Ablesung gilt zum Tagesende ihres Datums. Bei Zählerwechsel trägt die
 // Ablesung replacement=true: oldEndValue = Endstand des alten Geräts, value = Startstand des neuen.
-export function meterSegments(readings) {
+export function meterSegments(readings: Reading[]): { segments: MeterSegment[]; warnings: string[] } {
   const sorted = readings.slice().sort((a, b) => a.date.localeCompare(b.date))
-  const segments = []
-  const warnings = []
+  const segments: MeterSegment[] = []
+  const warnings: string[] = []
   for (let i = 1; i < sorted.length; i++) {
     const r0 = sorted[i - 1]
     const r1 = sorted[i]
@@ -90,7 +123,7 @@ export function meterSegments(readings) {
 // Verbrauch im Zeitraum [from, to] (inklusive Tage). Segmente werden tagesanteilig
 // interpoliert — liegt eine Ablesung genau auf der Zeitraumgrenze (z. B. Zwischenablesung
 // beim Mieterwechsel), ist die Aufteilung exakt.
-export function consumptionInPeriod(readings, from, to) {
+export function consumptionInPeriod(readings: Reading[], from: string, to: string): number {
   const { segments } = meterSegments(readings)
   let sum = 0
   const pStart = toUTC(from) - MS_DAY // Zeitraum beginnt nach Tagesende des Vortags
@@ -106,7 +139,7 @@ export function consumptionInPeriod(readings, from, to) {
 }
 
 // Jahresübersicht für die Zähler-Seite: Verbrauch pro Zähler + Warnungen
-export function consumptionOverview(db, year) {
+export function consumptionOverview(db: Db, year: number): ConsumptionOverviewRow[] {
   const from = `${year}-01-01`
   const to = `${year}-12-31`
   return (db.meters ?? []).map((m) => {
@@ -123,11 +156,21 @@ export function consumptionOverview(db, year) {
 
 // ---------- Vorauszahlungen ----------
 
+/**
+ * Ein Mietverhältnis, wie es vor der Staffel-Migration aussehen konnte: ein fester
+ * Monatsbetrag statt einer Staffel. `store.ts` migriert das beim Laden weg — der Rückfall
+ * hier greift nur für Daten, die nicht durch den Store gegangen sind (Tests, Fixtures).
+ */
+type TenancyWithLegacyPrepayment = Tenancy & { prepaymentMonthlyCents?: Cents }
+
 // Vorauszahlungen eines Jahres: pro Kalendermonat zählt der Staffelbetrag, der am
 // Monatsersten gilt — sofern das Mietverhältnis am Monatsersten besteht. Eine manuelle
 // Korrektur pro Jahr (tatsächlich gezahlter Betrag) hat immer Vorrang, denn rechtlich
 // sind die tatsächlich geleisteten Vorauszahlungen anzusetzen.
-export function computePrepaymentCents(tenancy, year) {
+export function computePrepaymentCents(
+  tenancy: TenancyWithLegacyPrepayment,
+  year: number,
+): { cents: Cents; overridden: boolean } {
   const override = tenancy.prepaymentOverrides?.[String(year)]
   if (override != null) return { cents: override, overridden: true }
   const schedule = (
@@ -155,7 +198,7 @@ export function computePrepaymentCents(tenancy, year) {
 
 // Staffelbetrag, der am Monatsersten gilt (für Kaltmiete oder Vorauszahlung).
 // `schedule`: Array aus { from: 'YYYY-MM', monthlyCents }. firstMonth: 'YYYY-MM'.
-function rateAtMonth(schedule, firstMonth) {
+function rateAtMonth(schedule: readonly { from: string; monthlyCents: Cents }[], firstMonth: string): Cents {
   let rate = 0
   for (const e of schedule.slice().sort((a, b) => a.from.localeCompare(b.from))) {
     if (e.from <= firstMonth) rate = e.monthlyCents
@@ -167,7 +210,7 @@ function rateAtMonth(schedule, firstMonth) {
 // Vorauszahlung) je Monat, sowie die tatsächlich eingegangenen Zahlungen des Jahres.
 // Zahlungen werden den Monaten in Reihenfolge (Jan → Dez) zugeteilt: so spiegelt der
 // Status („bezahlt / teilweise / offen") wider, bis zu welchem Monat das Konto gedeckt ist.
-export function rentLedger(db, year) {
+export function rentLedger(db: Db, year: number): RentLedger {
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
   const unitById = new Map(db.units.map((u) => [u.id, u]))
@@ -179,7 +222,7 @@ export function rentLedger(db, year) {
       const baseSchedule = Array.isArray(t.baseRents) ? t.baseRents : []
       const ppSchedule = Array.isArray(t.prepayments) ? t.prepayments : []
 
-      const months = []
+      const months: RentMonth[] = []
       for (let m = 1; m <= 12; m++) {
         const mm = `${year}-${String(m).padStart(2, '0')}`
         const firstDay = `${mm}-01`
@@ -247,7 +290,7 @@ export function rentLedger(db, year) {
 // Betriebskostenarten den Anlage-V-nahen Positionsgruppen zuordnen. Bewusst beschreibende
 // Gruppen statt fester Zeilennummern (die sich jährlich ändern können). Unbekannte Kategorien
 // fallen auf „Sonstige Werbungskosten".
-const ANLAGE_V_GROUP = {
+const ANLAGE_V_GROUP: Record<string, string> = {
   Grundsteuer: 'Grundsteuer & öffentliche Abgaben',
   'Wasser/Abwasser': 'Laufende Betriebskosten',
   Niederschlagswasser: 'Laufende Betriebskosten',
@@ -265,7 +308,7 @@ const ANLAGE_V_GROUP = {
   'Nicht umlagefähig': 'Verwaltung & Instandhaltung',
 }
 // Anzeigereihenfolge der Gruppen in der Auswertung
-const ANLAGE_V_GROUP_ORDER = [
+const ANLAGE_V_GROUP_ORDER: string[] = [
   'Grundsteuer & öffentliche Abgaben',
   'Laufende Betriebskosten',
   'Versicherungen',
@@ -278,7 +321,7 @@ const ANLAGE_V_GROUP_ORDER = [
 // der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
 // Werbungskosten folgen dem Abflussprinzip (im Jahr gebuchte Kosten), die Einnahmen
 // werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
-export function taxReport(db, year) {
+export function taxReport(db: Db, year: number): TaxReport {
   const ledger = rentLedger(db, year)
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
   const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
@@ -287,11 +330,11 @@ export function taxReport(db, year) {
 
   // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren
   const items = (db.costItems ?? []).filter((c) => c.year === year)
-  const byGroup = new Map()
+  const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   for (const item of items) {
     const group = ANLAGE_V_GROUP[item.category] ?? 'Sonstige Werbungskosten'
     if (!byGroup.has(group)) byGroup.set(group, new Map())
-    const cats = byGroup.get(group)
+    const cats = byGroup.get(group)!
     const prev = cats.get(item.category) ?? { category: item.category, amountCents: 0, labor35aCents: 0 }
     prev.amountCents += item.amountCents
     prev.labor35aCents += item.labor35aCents ?? 0
@@ -343,26 +386,37 @@ export function taxReport(db, year) {
 // nicht die zufällige Array- oder Datenbankreihenfolge bestimmen, wer das Restcent bekommt
 // (Spec §271.26). Welcher Schlüssel gewinnt, ist fachlich beliebig; entscheidend ist, dass
 // dieselben Daten immer dasselbe Ergebnis liefern.
-function largestRemainder(totalCents, raws, keys = []) {
+function largestRemainder(totalCents: number, raws: number[], keys: string[] = []): number[] {
   if (raws.length === 0) return []
   const floors = raws.map((r) => Math.floor(r))
   let rest = totalCents - floors.reduce((a, b) => a + b, 0)
-  const keyOf = (i) => String(keys[i] ?? i)
-  const order = raws
-    .map((r, i) => [r - Math.floor(r), i])
+  const keyOf = (i: number) => String(keys[i] ?? i)
+  const order: [number, number][] = raws
+    .map((r, i): [number, number] => [r - Math.floor(r), i])
     .sort((a, b) => b[0] - a[0] || keyOf(a[1]).localeCompare(keyOf(b[1])))
   for (let k = 0; rest > 0; k++, rest--) floors[order[k % order.length][1]]++
   for (let k = 0; rest < 0; k++, rest++) floors[order[order.length - 1 - (k % order.length)][1]]--
   return floors
 }
 
-function fmtNum(n) {
+/** Zählertyp für Meldungen an den Vermieter — Benennung statt internem Schlüssel. */
+function meterTypeLabel(type: CostItem['meterType']): string {
+  return type ? (METER_TYPE_LABELS[type] ?? type) : '—'
+}
+
+function fmtNum(n: number): string {
   return n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 }
 
 // ---------- Abrechnung ----------
 
-export function computeSettlement(db, year) {
+/** Ein Mietverhältnis, das im Abrechnungsjahr besteht, samt Wohnung und belegten Tagen. */
+type ActiveTenancy = Tenancy & { days: number; unit: Unit }
+
+/** Verbrauchsbasis eines Zählertyps über alle Wohnungszähler hinweg. */
+type ConsumptionByType = { meters: Meter[]; basis: number; perUnit: Map<string, number> }
+
+export function computeSettlement(db: Db, year: number): SettlementResult {
   const diy = daysInYear(year)
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
@@ -373,7 +427,7 @@ export function computeSettlement(db, year) {
   // Mietverhältnisse mit Überlappung im Jahr
   const tenancies = db.tenancies
     .map((t) => ({ ...t, days: overlapDays(t.start, t.end, year), unit: unitById.get(t.unitId) }))
-    .filter((t) => t.days > 0 && t.unit)
+    .filter((t): t is ActiveTenancy => t.days > 0 && t.unit !== undefined)
   const partTenancies = tenancies.filter((t) => t.unit.participates)
   const basisPersonDays = partTenancies.reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0)
 
@@ -381,21 +435,21 @@ export function computeSettlement(db, year) {
   const allMeters = db.meters ?? []
   const allReadings = db.readings ?? []
   const meterTypes = [...new Set(allMeters.filter((m) => m.unitId).map((m) => m.type))]
-  const consumptionByType = {}
+  const consumptionByType: Record<string, ConsumptionByType> = {}
   for (const type of meterTypes) {
     const meters = allMeters.filter((m) => m.unitId && m.type === type)
-    const perUnit = new Map()
+    const perUnit = new Map<string, number>()
     let basis = 0
     for (const m of meters) {
       const readings = allReadings.filter((r) => r.meterId === m.id)
       const c = consumptionInPeriod(readings, yFrom, yTo)
       basis += c
-      perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+      perUnit.set(m.unitId!, (perUnit.get(m.unitId!) || 0) + c)
     }
     consumptionByType[type] = { meters, basis, perUnit }
   }
 
-  const statements = new Map()
+  const statements = new Map<string, Statement>()
   for (const t of partTenancies) {
     const from = new Date(Math.max(toUTC(t.start), toUTC(yFrom)))
     const to = t.end ? new Date(Math.min(toUTC(t.end), toUTC(yTo))) : new Date(toUTC(yTo))
@@ -449,7 +503,7 @@ export function computeSettlement(db, year) {
         targets.push({ t, raw, basisText: `${fmtNum(pd)} von ${fmtNum(basisPersonDays)} Personentagen` })
       }
     } else if (item.key === 'meter') {
-      const data = consumptionByType[item.meterType]
+      const data = item.meterType ? consumptionByType[item.meterType] : undefined
       if (data && data.basis > 0) {
         for (const t of partTenancies) {
           const meters = data.meters.filter((m) => m.unitId === t.unitId)
@@ -477,7 +531,7 @@ export function computeSettlement(db, year) {
     if (item.category !== 'Nicht umlagefähig' && targets.length === 0) {
       warnings.push(
         item.key === 'meter'
-          ? `„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`
+          ? `„${item.description}": kein Verbrauch für Zählertyp „${meterTypeLabel(item.meterType)}" erfasst — Betrag geht an den Vermieter.`
           : `„${item.description}": keine Verteilbasis für Schlüssel „${KEY_LABELS[item.key] || item.key}" — Betrag geht an den Vermieter.`,
       )
     }

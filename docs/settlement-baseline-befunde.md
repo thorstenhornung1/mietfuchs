@@ -149,6 +149,56 @@ Gegenprobe mit realistischen Regressionen — das Netz greift:
 
 ---
 
+## B7 — `parseEuro` liest einen Punkt ohne Komma technisch
+
+**Status: eingefrorene Baseline, fachlich zu prüfen** · Test `parseEuro deutet einen Punkt
+ohne Komma technisch` in `packages/domain/test/money.test.ts`
+
+Die Eingabe „1.234" ist zweideutig. Deutsch gemeint sind 1.234,00 €, technisch gelesen
+1,234 €. Die Engine liest technisch und rundet auf **1,23 €**:
+
+```
+parseEuro('1.234,56') = 123456 ct   ✓ deutsch, eindeutig durch das Komma
+parseEuro('1234.56')  = 123456 ct   ✓ technisch, eindeutig durch den Punkt als Dezimaltrenner
+parseEuro('1.234')    =    123 ct   ← zweideutig, technisch gelesen
+```
+
+Ein deutscher Nutzer, der einen glatten Betrag mit Tausenderpunkt tippt, bekommt damit das
+Tausendfache zu wenig. Sichtbar wird es sofort (das Feld zeigt danach „1,23 €"), still ist
+der Fehler also nicht — aber er ist überraschend.
+
+Eine gängige Heuristik wäre: Ein Punkt, auf den genau drei Ziffern folgen und der nicht der
+einzige Trenner mit ein bis zwei Nachkommastellen ist, wird als Tausenderpunkt gelesen
+(`/^\d{1,3}(\.\d{3})+$/`). Das ändert aber das Verhalten jeder Eingabemaske und gehört
+deshalb nicht in den PR, der die Foundation baut. Bis zur Klärung ist das heutige Verhalten
+Baseline und im Test festgeschrieben.
+
+---
+
+## B8 — Der Zählertyp erschien in Warnungen als interner Schlüssel
+
+**Status: behoben** · Fixture F06 · `apps/server/src/calc.ts`
+
+Fehlt die Verteilbasis für eine verbrauchsabhängige Position, nennt die Warnung den
+betroffenen Zählertyp. Sie gab dabei den gespeicherten Schlüssel aus:
+
+```
+vorher:  … kein Verbrauch für Zählertyp „waerme" erfasst — Betrag geht an den Vermieter.
+nachher: … kein Verbrauch für Zählertyp „Wärme" erfasst — Betrag geht an den Vermieter.
+```
+
+Aufgefallen ist das erst beim Typisieren: Die Fixtures F05 und F06 verwendeten die
+Zählertypen „Wasser" und „Heizung" — Werte, die das Datenmodell gar nicht kennt
+(`MeterType` ist `kaltwasser | strom | waerme | sonstig`). Die Fixtures waren an dieser
+Stelle also freundlicher als die Wirklichkeit und haben den Schönheitsfehler verdeckt.
+Beide Fixtures führen jetzt gültige Domänendaten, und `METER_TYPE_LABELS` ist aus dem
+Client ins Domain-Package gewandert, damit auch der Server die Benennung kennt.
+
+Dies ist die einzige bewusste Änderung an einer Golden-Master-Erwartung seit dem Einfrieren
+— dokumentiert, weil genau das die Regel aus dem Kanon verlangt.
+
+---
+
 ## B6 — Vorschlag der neuen Vorauszahlung unterschätzt bei Teiljahren
 
 **Status: eingefrorene Baseline, fachlich zu prüfen** · Fixture F09

@@ -50,7 +50,7 @@ for (const [name, { target, out }] of Object.entries(selected)) {
     'build',
     '--compile',
     `--target=${target}`,
-    'apps/server/src/index.js',
+    'apps/server/src/index.ts',
     '--outfile',
     path.join(outDir, out),
   ])

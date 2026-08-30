@@ -10,7 +10,7 @@ import {
   personDaysInPeriod,
   rentLedger,
   taxReport,
-} from '../src/calc.js'
+} from '../src/calc.ts'
 
 // Szenario wie beim Nutzer: 3 Wohnungen, EG selbstbewohnt (nicht beteiligt),
 // zwei vermietete Wohnungen tragen alle Kosten.

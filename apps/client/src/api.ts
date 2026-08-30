@@ -1,3 +1,5 @@
+import { formatEuro, parseEuro, formatCivilDate, isCivilDate } from '@mietfuchs/domain'
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers =
     init?.body && !(init.body instanceof FormData)
@@ -11,19 +13,18 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export const fmtEuro = (cents: number) =>
-  (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
+// Geld- und Datumsformatierung kommen aus dem gemeinsamen Domain-Package: Server, Client
+// und Tests müssen zeichengleich dasselbe anzeigen.
 
-// Akzeptiert deutsche ("1.234,56") und technische ("1234.56") Schreibweise
-export function parseEuro(s: string): number | null {
-  const t = s.trim().replace(/€|\s/g, '')
-  if (!t) return null
-  const norm = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
-  const n = Number(norm)
-  return Number.isFinite(n) ? Math.round(n * 100) : null
-}
+/** Anzeige eines Betrags. Bewusst streng — ein Nicht-Integer wäre ein Bruch von Invariante 17. */
+export const fmtEuro = formatEuro
 
-export const fmtDate = (iso: string) => {
-  const [y, m, d] = iso.split('-')
-  return `${d}.${m}.${y}`
-}
+export { parseEuro }
+
+/**
+ * Anzeige eines Kalendertags. Bewusst tolerant: In Formularen ist ein Datumsfeld während
+ * der Eingabe leer oder halb getippt, und die Darstellung darf daran nicht scheitern.
+ * Die strenge Prüfung gehört an die Domänengrenze, nicht in die Anzeige.
+ */
+export const fmtDate = (iso: string | null | undefined) =>
+  isCivilDate(iso) ? formatCivilDate(iso) : ''

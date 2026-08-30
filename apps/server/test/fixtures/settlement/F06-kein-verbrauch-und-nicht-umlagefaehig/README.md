@@ -13,28 +13,29 @@ Ergebnis).
 ## Ausgangslage
 
 Zwei Wohnungen à 50 m², beide ganzjährig vermietet, **keine Vorauszahlungen** vereinbart.
-Ein Kaltwasserzähler in Wohnung 1 (Typ `Wasser`), aber **kein einziger Zähler vom Typ
-`Heizung`**.
+Ein Kaltwasserzähler in Wohnung 1 (Typ `kaltwasser`), aber **kein einziger Zähler vom Typ
+`waerme`**.
 
 | Position | Betrag | Schlüssel | Situation |
 |---|---|---|---|
-| c1 Heizkosten Zentralheizung | 500,00 € | `meter` / Typ `Heizung` | Verteilbasis fehlt vollständig |
+| c1 Heizkosten Zentralheizung | 500,00 € | `meter` / Typ `waerme` | Verteilbasis fehlt vollständig |
 | c2 Instandhaltung Dach | 300,00 € | `area`, Kategorie **Nicht umlagefähig** | darf gar nicht verteilt werden |
 
 ## Handrechnung
 
-**c1** — für den Zählertyp `Heizung` existiert kein Zähler, die Verteilbasis ist also 0. Ein
+**c1** — für den Zählertyp `waerme` existiert kein Zähler, die Verteilbasis ist also 0. Ein
 Rückfall auf Fläche, Personen oder Einheiten wäre eine stille Ersatzannahme und ist verboten
 (Invariante 20). Also:
 
 ```
 Mieteranteile = 0
 Vermieteranteil = 50.000 ct
-+ Warnung: „Heizkosten Zentralheizung": kein Verbrauch für Zählertyp „Heizung" erfasst
++ Warnung: „Heizkosten Zentralheizung": kein Verbrauch für Zählertyp „Wärme" erfasst
            — Betrag geht an den Vermieter.
 ```
 
-Die Warnung ist der eigentliche Prüfgegenstand: Ein leises Ergebnis wäre hier gefährlicher als
+Die Warnung benennt den Zählertyp als **„Wärme"**, nicht als internen Schlüssel `waerme`
+(siehe B8 in `docs/settlement-baseline-befunde.md`). Sie ist der eigentliche Prüfgegenstand: Ein leises Ergebnis wäre hier gefährlicher als
 ein falsches, weil der Vermieter den Datenmangel nicht bemerken würde.
 
 **c2** — die Kategorie `Nicht umlagefähig` schaltet die Verteilung vor dem Schlüssel ab. Der

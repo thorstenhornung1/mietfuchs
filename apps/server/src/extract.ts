@@ -5,20 +5,38 @@
 
 import fs from 'node:fs'
 import pdfParse from 'pdf-parse/lib/pdf-parse.js'
+import { CATEGORIES } from '@mietfuchs/domain'
+import type { Extraction, MeterReadingExtraction, Settings } from '@mietfuchs/domain'
+import { errorMessage } from './errors.ts'
+
+/** Nur diese beiden Einstellungen braucht die KI-Auswertung. */
+type OllamaSettings = Pick<Settings, 'ollamaUrl' | 'ollamaModel'>
+
+/** Eine Nachricht an Ollama; `images` sind Base64-Daten für Vision-Modelle. */
+type OllamaMessage = { role: 'user'; content: string; images?: string[] }
+
+/** Ollama antwortet mit dem Modelltext in `message.content` — unser JSON steckt darin. */
+type OllamaChatResponse = { message?: { content?: string } }
+
+type Position = NonNullable<Extraction['positions']>[number]
 
 // Gescanntes PDF (keine Textebene): Seiten als PNG rendern, damit das Vision-Modell
 // sie wie ein Foto auswerten kann. Begrenzt auf die ersten Seiten — Rechnungen stehen
 // praktisch immer vorn, und jedes Bild kostet Auswertungszeit.
-async function pdfPagesAsImages(filePath, maxPages = 4) {
+async function pdfPagesAsImages(filePath: string, maxPages = 4): Promise<string[]> {
   const { pdf } = await import('pdf-to-img')
   const doc = await pdf(filePath, { scale: 2 })
-  const images = []
+  const images: string[] = []
   for await (const page of doc) {
     images.push(page.toString('base64'))
     if (images.length >= maxPages) break
   }
   return images
 }
+
+// Die Kategorienliste kommt aus dem Domain-Package. Sie stand hier früher ein zweites Mal
+// — CLAUDE.md wies eigens darauf hin, dass beide Stellen von Hand synchron zu halten sind.
+const CATEGORY_ENUM: readonly string[] = CATEGORIES
 
 const SCHEMA = {
   type: 'object',
@@ -35,12 +53,7 @@ const SCHEMA = {
           description: { type: 'string' },
           category: {
             type: 'string',
-            enum: [
-              'Grundsteuer', 'Wasser/Abwasser', 'Müllabfuhr', 'Straßenreinigung',
-              'Gebäudereinigung', 'Gartenpflege', 'Beleuchtung/Allgemeinstrom', 'Schornsteinfeger',
-              'Sach- und Haftpflichtversicherung', 'Hauswart', 'Aufzug', 'Kabel/Antenne',
-              'Niederschlagswasser', 'Sonstige Betriebskosten', 'Nicht umlagefähig',
-            ],
+            enum: CATEGORY_ENUM,
           },
           amountEur: { type: 'number', description: 'Bruttobetrag dieser Position in Euro' },
           labor35aEur: { type: ['number', 'null'], description: 'Darin enthaltener Lohn-/Arbeitskostenanteil nach §35a EStG, falls auf der Rechnung ausgewiesen' },
@@ -52,8 +65,6 @@ const SCHEMA = {
   },
   required: ['vendor', 'positions', 'totalGrossEur'],
 }
-
-const CATEGORY_ENUM = SCHEMA.properties.positions.items.properties.category.enum
 
 const PROMPT = `Du bist ein Assistent für die Nebenkostenabrechnung eines privaten Vermieters in Deutschland.
 Analysiere die folgende Rechnung und extrahiere die Daten als JSON.
@@ -94,7 +105,12 @@ const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesit
 - "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
 - "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen`
 
-async function classifyPositions(base, model, vendor, positions) {
+async function classifyPositions(
+  base: string,
+  model: string,
+  vendor: string | undefined,
+  positions: Position[],
+): Promise<Position[]> {
   const schema = {
     type: 'object',
     properties: {
@@ -131,15 +147,22 @@ Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
     signal: AbortSignal.timeout(120000),
   })
   if (!res.ok) throw new Error(`Ollama ${res.status}`)
-  const data = await res.json()
-  const { categories } = JSON.parse(data.message?.content ?? '{}')
+  const data = (await res.json()) as OllamaChatResponse
+  const { categories } = JSON.parse(data.message?.content ?? '{}') as { categories?: unknown }
   if (!Array.isArray(categories) || categories.length !== positions.length) return positions
-  return positions.map((p, i) => ({ ...p, category: CATEGORY_ENUM.includes(categories[i]) ? categories[i] : p.category }))
+  return positions.map((p, i) => ({
+    ...p,
+    category: CATEGORY_ENUM.includes(categories[i]) ? (categories[i] as string) : p.category,
+  }))
 }
 
-export async function extractFromFile(filePath, mimetype, settings) {
+export async function extractFromFile(
+  filePath: string,
+  mimetype: string,
+  settings: OllamaSettings,
+): Promise<Extraction> {
   const base = settings.ollamaUrl.replace(/\/+$/, '')
-  const message = { role: 'user', content: PROMPT }
+  const message: OllamaMessage = { role: 'user', content: PROMPT }
 
   if (mimetype === 'application/pdf') {
     const parsed = await pdfParse(fs.readFileSync(filePath)).catch(() => ({ text: '' }))
@@ -148,11 +171,13 @@ export async function extractFromFile(filePath, mimetype, settings) {
       message.content += `\n\n--- RECHNUNGSTEXT ---\n${text.slice(0, 20000)}`
     } else {
       // Scan ohne (brauchbare) Textebene → Seiten rendern und ans Vision-Modell geben
-      let images
+      let images: string[]
       try {
         images = await pdfPagesAsImages(filePath)
       } catch (err) {
-        throw new Error(`PDF enthält keinen auslesbaren Text und konnte nicht als Bild gerendert werden (${String(err.message || err)}).`)
+        throw new Error(
+          `PDF enthält keinen auslesbaren Text und konnte nicht als Bild gerendert werden (${errorMessage(err)}).`,
+        )
       }
       if (images.length === 0) throw new Error('PDF enthält keine Seiten.')
       message.images = images
@@ -181,8 +206,8 @@ export async function extractFromFile(filePath, mimetype, settings) {
     const body = await res.text().catch(() => '')
     throw new Error(`Ollama antwortet mit ${res.status}: ${body.slice(0, 300)}`)
   }
-  const data = await res.json()
-  const result = JSON.parse(data.message?.content ?? '{}')
+  const data = (await res.json()) as OllamaChatResponse
+  const result = JSON.parse(data.message?.content ?? '{}') as Extraction
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
   // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
@@ -211,7 +236,11 @@ Antworte nur mit der Kategorie.`
 
 // Bilder können Rechnungsfoto ODER Zählerfoto sein → klassifizieren. PDFs/Bescheide sind praktisch
 // immer Kostendokumente; dort sparen wir uns den zusätzlichen Vision-Call.
-export async function classifyDocType(filePath, mimetype, settings) {
+export async function classifyDocType(
+  filePath: string,
+  mimetype: string,
+  settings: OllamaSettings,
+): Promise<'rechnung' | 'zaehlerstand'> {
   if (!mimetype.startsWith('image/')) return 'rechnung'
   const base = settings.ollamaUrl.replace(/\/+$/, '')
   const image = fs.readFileSync(filePath).toString('base64')
@@ -228,8 +257,8 @@ export async function classifyDocType(filePath, mimetype, settings) {
     signal: AbortSignal.timeout(120000),
   })
   if (!res.ok) throw new Error(`Ollama ${res.status}`)
-  const data = await res.json()
-  const { docType } = JSON.parse(data.message?.content ?? '{}')
+  const data = (await res.json()) as OllamaChatResponse
+  const { docType } = JSON.parse(data.message?.content ?? '{}') as { docType?: string }
   return docType === 'zaehlerstand' ? 'zaehlerstand' : 'rechnung'
 }
 
@@ -249,9 +278,13 @@ Lies ab und gib JSON zurück:
 - "value": den aktuellen Zählerstand als Zahl. Nimm die schwarzen Vorkommastellen; rote Nachkommastellen (Liter/Hunderter) weglassen.
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
 
-export async function extractMeterReading(filePath, mimetype, settings) {
+export async function extractMeterReading(
+  filePath: string,
+  mimetype: string,
+  settings: OllamaSettings,
+): Promise<MeterReadingExtraction> {
   const base = settings.ollamaUrl.replace(/\/+$/, '')
-  const message = { role: 'user', content: METER_PROMPT }
+  const message: OllamaMessage = { role: 'user', content: METER_PROMPT }
   if (mimetype === 'application/pdf') {
     const images = await pdfPagesAsImages(filePath, 1)
     if (images.length === 0) throw new Error('PDF enthält keine Seiten.')
@@ -277,14 +310,14 @@ export async function extractMeterReading(filePath, mimetype, settings) {
     const body = await res.text().catch(() => '')
     throw new Error(`Ollama antwortet mit ${res.status}: ${body.slice(0, 300)}`)
   }
-  const data = await res.json()
-  return JSON.parse(data.message?.content ?? '{}')
+  const data = (await res.json()) as OllamaChatResponse
+  return JSON.parse(data.message?.content ?? '{}') as MeterReadingExtraction
 }
 
-export async function listOllamaModels(settings) {
+export async function listOllamaModels(settings: OllamaSettings): Promise<string[]> {
   const base = settings.ollamaUrl.replace(/\/+$/, '')
   const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(5000) })
   if (!res.ok) throw new Error(`Ollama antwortet mit ${res.status}`)
-  const data = await res.json()
+  const data = (await res.json()) as { models?: { name: string }[] }
   return (data.models || []).map((m) => m.name)
 }

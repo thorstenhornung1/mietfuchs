@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import type { Cents, CivilDate, Db, PersonEntry, PrepaymentEntry, RentEntry, Tenancy } from '@mietfuchs/domain'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // In der gepackten Binary (Bun --compile) liegt der Code in einem virtuellen,
@@ -14,7 +15,7 @@ export const DATA_DIR = PACKAGED
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 
-const DEFAULT_DB = {
+const DEFAULT_DB: Db = {
   settings: {
     houseName: '',
     address: '',
@@ -35,18 +36,35 @@ const DEFAULT_DB = {
   closedSettlements: [],
 }
 
-let db = null
+/**
+ * So kann ein Mietverhältnis auf der Platte aussehen, bevor die Migrationen in `load()`
+ * gelaufen sind: Ältere Bestände kennen die Staffeln noch nicht, sondern nur je einen
+ * festen Wert. Der Typ macht sichtbar, dass die Datei ein anderes Bild hat als die Domäne.
+ */
+type StoredTenancy = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents'> & {
+  personHistory?: PersonEntry[]
+  prepayments?: PrepaymentEntry[]
+  baseRents?: RentEntry[]
+  /** Altformat vor der Vorauszahlungs-Staffel: ein fester Monatsbetrag. */
+  prepaymentMonthlyCents?: Cents
+  /** Altformat vor der Personen-Staffel: eine feste Personenzahl. */
+  persons?: number
+  start: CivilDate
+}
 
-function load() {
+let db: Db | null = null
+
+function load(): Db {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
   if (fs.existsSync(DB_FILE)) {
-    db = { ...structuredClone(DEFAULT_DB), ...JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) }
+    const stored = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) as Partial<Db>
+    db = { ...structuredClone(DEFAULT_DB), ...stored }
     db.settings = { ...DEFAULT_DB.settings, ...db.settings }
   } else {
     db = structuredClone(DEFAULT_DB)
   }
   // Migrationen älterer Datenformate
-  for (const t of db.tenancies) {
+  for (const t of db.tenancies as unknown as StoredTenancy[]) {
     // fester Monatsbetrag → Vorauszahlungs-Staffel
     if (!Array.isArray(t.prepayments)) {
       t.prepayments =
@@ -66,23 +84,23 @@ function load() {
   return db
 }
 
-export function getDb() {
+export function getDb(): Db {
   return db ?? load()
 }
 
-export function save() {
+export function save(): void {
   // Atomar schreiben: erst Temp-Datei, dann ersetzen — schützt vor halben Dateien bei Absturz
   const tmp = DB_FILE + '.tmp'
   fs.writeFileSync(tmp, JSON.stringify(getDb(), null, 2), 'utf8')
   fs.renameSync(tmp, DB_FILE)
 }
 
-export function newId() {
+export function newId(): string {
   return crypto.randomBytes(8).toString('hex')
 }
 
 // Nach dem Wiederherstellen eines Backups die db.json neu von der Platte lesen
-export function reloadDb() {
+export function reloadDb(): Db {
   db = null
   return load()
 }

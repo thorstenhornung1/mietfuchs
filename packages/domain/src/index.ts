@@ -8,3 +8,5 @@
 
 export * from './money.ts'
 export * from './dates.ts'
+export * from './model.ts'
+export * from './classifications.ts'

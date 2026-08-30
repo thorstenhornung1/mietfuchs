@@ -11,7 +11,7 @@ Ergebnis).
 ## Ausgangslage
 
 Zwei gleich große Wohnungen (je 50 m²), beide ganzjährig vermietet, je ein Kaltwasserzähler.
-Eine Kostenposition: Wasser **1.100,00 €**, Schlüssel `meter`, Zählertyp `Wasser`.
+Eine Kostenposition: Wasser **1.100,00 €**, Schlüssel `meter`, Zählertyp `kaltwasser`.
 
 Ablesungen — eine Ablesung gilt zum **Tagesende** ihres Datums:
 

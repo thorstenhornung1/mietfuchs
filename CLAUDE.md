@@ -22,7 +22,7 @@ Vom Repo-Root (npm-Workspaces: `apps/*` und `packages/*` werden in einem Durchga
 npm install        # installiert alle Workspaces
 npm run dev        # concurrently: Server (Port 3001) + Vite (Port 5173)
 npm test           # Tests von Domain-Package und Server (node:test)
-npm run typecheck  # tsc --noEmit über Domain und Client
+npm run typecheck  # tsc --noEmit über Domain, Server und Client
 npm run build      # baut das Frontend nach apps/client/dist (tsc --noEmit + vite build)
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
@@ -50,13 +50,13 @@ npm run test -w @mietfuchs/server -- --test-name-pattern "Flächenschlüssel"
 ```
 
 Es gibt **keinen Linter** und keine Client-Tests. Typecheck läuft über `npm run typecheck`
-(`tsc --noEmit` für Domain und Client); `npm run build` typecheckt den Client zusätzlich.
+(`tsc --noEmit` für alle drei Pakete); `npm run build` typecheckt den Client zusätzlich.
 
 **Testlandschaft** unter `packages/domain/test/` und `apps/server/test/`:
 
 - [packages/domain/test/](packages/domain/test/) — `money.ts` und `dates.ts`: Integer-Cent
-  (Invariante 17), Kalendertag ≠ Zeitstempel (Invariante 102), inklusive Zeitraumgrenzen (§57).
-
+  (Invariante 17), Kalendertag ≠ Zeitstempel (Invariante 102), inklusive Zeitraumgrenzen (§57),
+  Kategorie-Zuordnung (Invariante 20).
 - [calc.test.js](apps/server/test/calc.test.js) — Unit-Tests einzelner Engine-Funktionen.
 - [settlement-golden.test.js](apps/server/test/settlement-golden.test.js) — **Golden Master**:
   vergleicht das vollständige Abrechnungsergebnis cent-genau gegen eingefrorene Erwartungen
@@ -81,7 +81,7 @@ Monorepo aus drei npm-Workspaces (Spec §38):
 
 ```text
 packages/domain/   gemeinsame fachliche Regeln (TypeScript): money.ts, dates.ts
-apps/server/       Express, ESM
+apps/server/       Express, ESM, TypeScript
 apps/client/       React 19 + Vite + TypeScript
 ```
 
@@ -93,15 +93,15 @@ keine Namespaces, keine Parameter-Properties.
 
 Im Dev proxyt Vite `/api` und `/uploads` an `localhost:3001`
 ([apps/client/vite.config.ts](apps/client/vite.config.ts)); im Produktivbuild liefert der Express-Server
-das statische `apps/client/dist` selbst aus ([apps/server/src/index.js](apps/server/src/index.js)).
+das statische `apps/client/dist` selbst aus ([apps/server/src/index.ts](apps/server/src/index.ts)).
 
 **Persistenz**: eine einzige JSON-Datei `apps/server/data/db.json`, atomar geschrieben (Temp +
-rename) über [apps/server/src/store.js](apps/server/src/store.js). Belege liegen in `apps/server/data/uploads/`.
+rename) über [apps/server/src/store.ts](apps/server/src/store.ts). Belege liegen in `apps/server/data/uploads/`.
 Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — Schema-Migrationen
-älterer `db.json` passieren imperativ in `load()` in store.js (z. B. fester Monatsbetrag →
+älterer `db.json` passieren imperativ in `load()` in store.ts (z. B. fester Monatsbetrag →
 Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration ergänzen.
 
-**API** ([apps/server/src/index.js](apps/server/src/index.js)): generische CRUD-Routen werden in einer
+**API** ([apps/server/src/index.ts](apps/server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
 Löschen einer `unit` bzw. `meter` kaskadiert manuell auf abhängige Datensätze (auch `payments`
 beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
@@ -113,7 +113,7 @@ Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip)
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
 /api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung.
 
-**Berechnungs-Engine** ([apps/server/src/calc.js](apps/server/src/calc.js)) — das Herzstück, hier liegt
+**Berechnungs-Engine** ([apps/server/src/calc.ts](apps/server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats — Gleitkomma-Fehler vermeiden.
 - Centgenaue Verteilung per **Hare/largest-remainder** (`largestRemainder`). Schöpfen die
@@ -140,19 +140,21 @@ die ganze fachliche Komplexität:
   vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester
   Anlage-V-Zeilennummern; keine automatische Eigennutzungs-Aufteilung (nur Hinweis).
 
-Der Server kennt **keine Domänentypen als Code** — die maßgebliche Typdefinition des gesamten
-Datenmodells steht in [apps/client/src/types.ts](apps/client/src/types.ts) (Unit, Tenancy, Meter,
-Reading, CostItem, Settings, Settlement …). Server und Client müssen hier konsistent bleiben.
-Die `KEY_LABELS` existieren bewusst doppelt (calc.js liefert UI-Strings im Settlement, types.ts
-hat eigene Labels für die Eingabe-Oberfläche).
+Das **Datenmodell** steht in [packages/domain/src/model.ts](packages/domain/src/model.ts)
+(Unit, Tenancy, Meter, Reading, CostItem, Settings, Db, Settlement …) und wird von Server und
+Client konsumiert; [apps/client/src/types.ts](apps/client/src/types.ts) reicht es nur weiter
+und ergänzt reine Anzeige-Beschriftungen. Die `KEY_LABELS` existieren bewusst doppelt
+(calc.ts liefert UI-Strings im Settlement, types.ts hat eigene Labels für die
+Eingabe-Oberfläche).
 
-**KI-Belegauswertung** ([apps/server/src/extract.js](apps/server/src/extract.js)): optional, gegen eine
+**KI-Belegauswertung** ([apps/server/src/extract.ts](apps/server/src/extract.ts)): optional, gegen eine
 lokale **Ollama**-Instanz (URL/Modell aus den Settings). PDF → Textebene via `pdf-parse`;
 Scans ohne (brauchbare) Textebene werden per `pdf-to-img` seitenweise als PNG gerendert und
 ans Vision-Modell gegeben. Bilder → Base64 (braucht Vision-Modell). Erzwingt
 strukturiertes JSON über `format: SCHEMA`. Die KI macht nur Vorschläge — Übernahme erst nach
-manueller Prüfung. Die Kategorie-Enums in extract.js und in `CATEGORIES`/`matchCategory` in
-types.ts müssen zusammenpassen.
+manueller Prüfung. Die Kategorienliste kommt aus
+[packages/domain/src/classifications.ts](packages/domain/src/classifications.ts) und steht
+damit nur noch an einer Stelle (früher doppelt in extract.js und types.ts).
 
 **Client** ([apps/client/src/](apps/client/src/)): React ohne Router — `App.tsx` schaltet per State
 zwischen den Seiten (`pages/`: Cockpit, Schnellerfassung, Zaehler, Kosten, Mietkonto,

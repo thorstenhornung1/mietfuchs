@@ -5,9 +5,29 @@ import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
-import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
-import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
-import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.js'
+import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.ts'
+import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
+import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.ts'
+import { errorMessage } from './errors.ts'
+import { CRUD_COLLECTIONS } from '@mietfuchs/domain'
+import type { CrudCollection, Db, Identifiable } from '@mietfuchs/domain'
+
+/**
+ * Zugriff auf eine CRUD-Sammlung als Liste identifizierbarer Datensätze.
+ *
+ * Die Routen unten sind bewusst generisch: Sie tun für jede Sammlung dasselbe und kennen
+ * nur die `id`. TypeScript kann über die Vereinigung `Db[CrudCollection]` aber nicht
+ * schreibend arbeiten (`push` auf einer Union von Array-Typen ist nicht aufrufbar), und
+ * jede Sammlung einzeln auszuschreiben würde die Generik zunichtemachen. Die Verengung
+ * geschieht deshalb hier, an genau einer Stelle.
+ */
+function collection(db: Db, name: CrudCollection): Identifiable[] {
+  return db[name] as Identifiable[]
+}
+
+function setCollection(db: Db, name: CrudCollection, items: Identifiable[]): void {
+  ;(db as Record<CrudCollection, unknown>)[name] = items
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -33,16 +53,16 @@ app.put('/api/settings', (req, res) => {
 })
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
-for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']) {
-  app.get(`/api/${coll}`, (req, res) => res.json(getDb()[coll]))
+for (const coll of CRUD_COLLECTIONS) {
+  app.get(`/api/${coll}`, (req, res) => res.json(collection(getDb(), coll)))
   app.post(`/api/${coll}`, (req, res) => {
     const item = { ...req.body, id: newId() }
-    getDb()[coll].push(item)
+    collection(getDb(), coll).push(item)
     save()
     res.status(201).json(item)
   })
   app.put(`/api/${coll}/:id`, (req, res) => {
-    const item = getDb()[coll].find((x) => x.id === req.params.id)
+    const item = collection(getDb(), coll).find((x) => x.id === req.params.id)
     if (!item) return res.status(404).json({ error: 'Nicht gefunden' })
     Object.assign(item, req.body, { id: item.id })
     save()
@@ -50,8 +70,8 @@ for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'pa
   })
   app.delete(`/api/${coll}/:id`, (req, res) => {
     const db = getDb()
-    const before = db[coll].length
-    db[coll] = db[coll].filter((x) => x.id !== req.params.id)
+    const before = collection(db, coll).length
+    setCollection(db, coll, collection(db, coll).filter((x) => x.id !== req.params.id))
     if (coll === 'units') {
       // Abhängige Daten einer gelöschten Wohnung mit entfernen
       const tenancyIds = db.tenancies.filter((t) => t.unitId === req.params.id).map((t) => t.id)
@@ -67,7 +87,7 @@ for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'pa
     if (coll === 'meters') {
       db.readings = db.readings.filter((r) => r.meterId !== req.params.id)
     }
-    if (db[coll].length === before) return res.status(404).json({ error: 'Nicht gefunden' })
+    if (collection(db, coll).length === before) return res.status(404).json({ error: 'Nicht gefunden' })
     save()
     res.json({ ok: true })
   })
@@ -158,7 +178,7 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     const result = await extractFromFile(req.file.path, req.file.mimetype, getDb().settings)
     res.json({ file: req.file.filename, extraction: result })
   } catch (err) {
-    res.status(502).json({ file: req.file.filename, error: String(err.message || err) })
+    res.status(502).json({ file: req.file.filename, error: errorMessage(err) })
   }
 })
 
@@ -178,7 +198,7 @@ app.post('/api/intake', upload.single('file'), async (req, res) => {
       res.json({ file: req.file.filename, kind: 'rechnung', extraction })
     }
   } catch (err) {
-    res.status(502).json({ file: req.file.filename, error: String(err.message || err) })
+    res.status(502).json({ file: req.file.filename, error: errorMessage(err) })
   }
 })
 
@@ -252,7 +272,7 @@ app.get('/api/ollama/status', async (req, res) => {
     const models = await listOllamaModels(getDb().settings)
     res.json({ ok: true, models })
   } catch (err) {
-    res.json({ ok: false, error: String(err.message || err) })
+    res.json({ ok: false, error: errorMessage(err) })
   }
 })
 
@@ -263,7 +283,8 @@ app.get('/api/ollama/status', async (req, res) => {
 const PACKAGED = !!globalThis.Bun
 if (PACKAGED) {
   const { embeddedFiles, mimeFor } = await import('./embedded-client.js')
-  const sendEmbedded = (res, urlPath) => {
+
+  const sendEmbedded = (res: express.Response, urlPath: string) => {
     const embedded = embeddedFiles[urlPath]
     if (!embedded) return false
     res.type(mimeFor(urlPath)).send(fs.readFileSync(embedded))
@@ -283,7 +304,7 @@ if (PACKAGED) {
 }
 
 // Standard-Browser mit der App öffnen (nur in der gepackten Binary — im Dev stört das).
-function openBrowser(url) {
+function openBrowser(url: string): void {
   try {
     if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' }).unref()
     else if (process.platform === 'darwin') spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
@@ -308,7 +329,7 @@ const server = app.listen(PORT, () => {
   }
 })
 server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
+  if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
     console.error(`Port ${PORT} ist bereits belegt. Läuft Mietfuchs vielleicht schon? Sonst mit NKA_PORT einen anderen Port setzen.`)
   } else {
     console.error(err)

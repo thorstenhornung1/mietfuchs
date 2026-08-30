@@ -30,7 +30,7 @@
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w @mietfuchs/server\" \"npm run dev -w @mietfuchs/client\"",
     "test": "npm run test -w @mietfuchs/domain -w @mietfuchs/server",
-    "typecheck": "npm run typecheck -w @mietfuchs/domain -w @mietfuchs/client",
+    "typecheck": "npm run typecheck -w @mietfuchs/domain -w @mietfuchs/server -w @mietfuchs/client",
     "build": "npm run build -w @mietfuchs/client",
     "start": "npm run start -w @mietfuchs/server",
     "package": "node scripts/package-binaries.mjs"

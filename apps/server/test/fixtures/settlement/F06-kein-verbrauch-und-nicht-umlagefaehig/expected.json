@@ -46,7 +46,7 @@
       ]
     },
     "warnings": [
-      "„Heizkosten Zentralheizung\": kein Verbrauch für Zählertyp „Heizung\" erfasst — Betrag geht an den Vermieter."
+      "„Heizkosten Zentralheizung\": kein Verbrauch für Zählertyp „Wärme\" erfasst — Betrag geht an den Vermieter."
     ]
   },
   "consumption": [{ "meterId": "m1", "consumption": 40, "readingCount": 2, "warnings": [] }]

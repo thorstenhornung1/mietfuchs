@@ -10,7 +10,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, daysInYear, overlapDays } from '../src/calc.js'
+import { computeSettlement, daysInYear, overlapDays } from '../src/calc.ts'
 import { normalizeSettlement } from '../testing/normalize.js'
 import { loadFixtures, actualOf } from '../testing/fixtures.js'
 

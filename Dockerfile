@@ -22,7 +22,7 @@ RUN npm prune --omit=dev
 FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-# Bewusst NKA_PORT statt PORT (siehe CLAUDE.md / apps/server/src/index.js)
+# Bewusst NKA_PORT statt PORT (siehe CLAUDE.md / apps/server/src/index.ts)
 ENV NKA_PORT=3001
 
 # Die Verzeichnisstruktur muss erhalten bleiben: Der Server liefert ../../client/dist aus,
@@ -38,4 +38,4 @@ EXPOSE 3001
 #   docker run -p 3001:3001 -v mietfuchs-data:/app/apps/server/data <image>
 VOLUME ["/app/apps/server/data"]
 
-CMD ["node", "apps/server/src/index.js"]
+CMD ["node", "apps/server/src/index.ts"]

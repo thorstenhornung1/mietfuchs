@@ -36,12 +36,12 @@
       "description": "Wasser nach Verbrauch",
       "amountCents": 110000,
       "key": "meter",
-      "meterType": "Wasser"
+      "meterType": "kaltwasser"
     }
   ],
   "meters": [
-    { "id": "m1", "unitId": "u1", "type": "Wasser", "label": "Kaltwasser Wohnung 1" },
-    { "id": "m2", "unitId": "u2", "type": "Wasser", "label": "Kaltwasser Wohnung 2" }
+    { "id": "m1", "unitId": "u1", "type": "kaltwasser", "name": "Kaltwasser Wohnung 1", "unit": "m³" },
+    { "id": "m2", "unitId": "u2", "type": "kaltwasser", "name": "Kaltwasser Wohnung 2", "unit": "m³" }
   ],
   "readings": [
     { "id": "r1", "meterId": "m1", "date": "2024-12-31", "value": 100 },
