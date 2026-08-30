@@ -4413,3 +4413,1005 @@ Die Accounting-Schicht dient der wirtschaftlichen Integrität und Nachvollziehba
 
 > Accounting beschreibt, was wirtschaftlich passiert ist. Tax beschreibt, wie dieser Vorgang für Vermietung und Verpachtung steuerlich zu behandeln ist. Keine der beiden Schichten darf stillschweigend die andere ersetzen oder rückwirkend verändern.
 
+---
+
+# 188. Addendum: Vermieter-Alltag, Lifecycle und operative Hausverwaltung
+
+**Stand:** 30.08.2026 · Ergänzt §§1–187 · Zielgruppe: private Vermieter in Deutschland, typischerweise 1–50 Einheiten, Self-Hosting/lokaler Betrieb bevorzugt.
+
+## 188.1 Ausgangspunkt
+
+Die bisherige Spezifikation deckt Finanz-, Steuer- und Datenarchitektur bereits sehr tief ab (Property/Lease/Party, Charges/Payments, CAMT, ExpenseAllocation, Betriebskosten, Technik, Kaution, Darlehen, AfA, Tax Layer, Accounting Layer, DATEV, OIDC, Dokumente). Der verbleibende wesentliche Produkt-Gap liegt nicht mehr in der Finanz- oder Steuerarchitektur — er liegt im **operativen Vermieter-Alltag**.
+
+Die zentrale Produktfrage lautet künftig zusätzlich:
+
+> Nicht nur: „Wie wird dieser Sachverhalt korrekt gespeichert, abgerechnet, gebucht oder steuerlich behandelt?"
+> Sondern auch: „Was muss der Vermieter jetzt tun, was ist überfällig und welcher Vorgang ist noch nicht abgeschlossen?"
+
+Mietfuchs wird deshalb um eine schlanke operative Schicht ergänzt.
+
+---
+
+# 189. Produktprinzip: vom Datenbestand zum Vermieter-Arbeitsplatz
+
+Die Fachobjekte bleiben unverändert. Neu kommt eine operative Sicht hinzu:
+
+```text
+Fachobjekt
+    ├── erzeugt ggf. Vorgang
+    ├── erzeugt ggf. Aufgabe
+    ├── erzeugt ggf. Frist
+    ├── erzeugt ggf. Korrespondenz
+    └── erscheint ggf. in der Inbox
+```
+
+Beispiele:
+
+```text
+Lease endet         → MoveOutCase → Übergabetermin → Auszugsprotokoll → Zählerstände
+                      → Schlüsselrückgabe → offene Forderungen prüfen → Kaution abrechnen
+                      → Vorgang schließen
+Charge überfällig   → DunningCase → Zahlungserinnerung → Wiedervorlage → ggf. nächste
+                      Mahnstufe → Zahlungseingang → Vorgang automatisch schließen
+MaintenancePlan fällig → MaintenanceCase → Angebot/Auftrag → Termin → Durchführung
+                      → Rechnung → MaintenanceEvent → nächste Fälligkeit
+```
+
+Die operative Schicht ersetzt keine Domänenobjekte und erzeugt keine zweite Wahrheit.
+
+---
+
+# 190. Neue Invarianten 61–85
+
+```text
+61. OperationalCase ≠ Fachobjekt
+62. Task ≠ Deadline
+63. Reminder ≠ rechtliche Frist
+64. Document ≠ Correspondence
+65. Correspondence ≠ Delivery
+66. DeliveryStatus ≠ rechtssicherer Zugangsnachweis
+67. MoveOut ≠ Löschen oder Überschreiben eines Lease
+68. Inspection ≠ Ticket
+69. DamageClaim ≠ Ticket
+70. DamageClaim ≠ WorkOrder
+71. ServiceContract ≠ VendorInvoice
+72. VendorQuote ≠ WorkOrder
+73. WorkOrder ≠ VendorInvoice
+74. KeySet ≠ Freitext im Übergabeprotokoll
+75. DunningAction verändert niemals rückwirkend eine Charge
+76. Mahnkosten sind eigene Forderungen, keine Mutation der Ursprungsforderung
+77. RentAdjustment: Berechnung, Mitteilung und Wirksamkeit sind getrennte Zustände
+78. PortalSubmission verändert niemals ungeprüft einen gebuchten Fachdatensatz
+79. GeneratedDocument ist nach Versand unveränderlich
+80. BulkCommunication speichert den tatsächlichen Empfängerkreis als Snapshot
+81. automatische Fristen tragen RuleVersion und Berechnungsgrundlage
+82. rechtliche Fristen werden nie ohne nachvollziehbare Regelbasis still erzeugt
+83. Portal-Sichtbarkeit eines Dokuments ist immer explizit
+84. externer Import ist idempotent oder verlangt explizite Bestätigung eines Duplikats
+85. Inbox-Einträge werden aus offenen Fachzuständen/Vorgängen abgeleitet;
+    sie bilden keine separate fachliche Wahrheit
+```
+
+---
+
+# 191. M11 – Vorgänge, Aufgaben, Fristen und Inbox
+
+## 191.1 Ziel
+
+Eine generische operative Schicht für alle wiederkehrenden und einmaligen Verwaltungsprozesse. Keine Domäne entwickelt künftig ein eigenes inkompatibles Aufgaben- oder Erinnerungssystem.
+
+## 191.2 OperationalCase
+
+Case-Typen: `MOVE_IN, MOVE_OUT, RENT_ADJUSTMENT, DUNNING, DAMAGE, MAINTENANCE, SERVICE_CONTRACT, INSURANCE, OPERATING_COST_SETTLEMENT, CO2_REIMBURSEMENT, TAX_PREPARATION, DOCUMENT_REQUEST, GENERAL`
+
+```prisma
+model OperationalCase {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  type            CaseType
+  title           String
+  description     String?
+  status          CaseStatus   // OPEN | IN_PROGRESS | WAITING_EXTERNAL | WAITING_TENANT
+                               // | WAITING_VENDOR | WAITING_OWNER | COMPLETED | CANCELLED
+  priority        CasePriority // LOW | NORMAL | HIGH | URGENT
+  ownerUserId     String?
+  startedAt       DateTime?
+  dueAt           DateTime?
+  completedAt     DateTime?
+  propertyId      String?
+  buildingId      String?
+  unitId          String?
+  leaseId         String?
+  partyId         String?
+  technicalAssetId String?
+  ticketId        String?
+  workOrderId     String?
+  serviceContractId String?
+  chargeId        String?
+  templateId      String?
+  parentCaseId    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+```
+
+## 191.3 Task und ChecklistItem
+
+```prisma
+model Task {
+  id            String @id @default(cuid())
+  workspaceId   String
+  caseId        String?
+  title         String
+  description   String?
+  assignedToId  String?
+  dueAt         DateTime?
+  status        TaskStatus
+  completedAt   DateTime?
+  sortOrder     Int
+}
+```
+
+Beispiel-Checkliste Move-out: Kündigung dokumentieren · Übergabetermin abstimmen · Zählerstände erfassen · Schlüssel vollständig zurücknehmen · Schäden dokumentieren · Nachsendeadresse erfassen · offene Forderungen prüfen · Kaution abrechnen · Einheit auf VACANT_FOR_RENT setzen.
+
+## 191.4 Deadline
+
+```prisma
+model Deadline {
+  id              String @id @default(cuid())
+  workspaceId     String
+  caseId          String?
+  leaseId         String?
+  propertyId      String?
+  settlementId    String?
+  serviceContractId String?
+  type            DeadlineType
+  baseDate        DateTime
+  dueDate         DateTime
+  calculationRule String?
+  ruleVersion     String?
+  legalBasis      String?
+  source          DeadlineSource // LEGAL_RULE | CONTRACT | USER_DEFINED
+                                 // | MAINTENANCE_PLAN | SYSTEM_WORKFLOW
+  status          DeadlineStatus
+  confirmedByUser Boolean @default(false)
+  completedAt     DateTime?
+}
+```
+
+Eine automatisch berechnete Frist muss immer anzeigen: Warum existiert sie? Aus welchem Datum berechnet? Nach welcher Regelversion? Gesetzlich, vertraglich oder nur organisatorisch?
+
+## 191.5 Reminder
+
+Ein Reminder ist nur eine Benachrichtigung zu Vorgang/Task/Deadline (z. B. 30/14/7 Tage vorher, am Fälligkeitstag, 1 Tag überfällig). Reminder verändern keine Fachobjekte.
+
+## 191.6 WorkflowTemplate
+
+Wiederkehrende Vorgänge (Move-in, Move-out, Schadensmeldung, Jahres-NK-Abrechnung, Versicherungsverlängerung, Heizungswartung, Mieterhöhung, Steuerjahresabschluss, CO2-Erstattungsantrag) werden aus **versionierten** Vorlagen erzeugt: Standardaufgaben, relative Fälligkeiten, Standardverantwortliche, Dokumentvorlagen, notwendige Fachobjekte, Abschlussbedingungen. Eine Vorlagenänderung verändert laufende Vorgänge nicht rückwirkend.
+
+---
+
+# 192. Operative Inbox und Kalender
+
+## 192.1 Ziel
+
+Die Startseite beantwortet primär: **„Was muss ich heute tun?"** — nicht „Welche Tabelle möchte ich öffnen?"
+
+## 192.2 Inbox-Kategorien
+
+```text
+ÜBERFÄLLIG · HEUTE · DIESE WOCHE · WARTET AUF MICH · WARTET AUF MIETER
+WARTET AUF DIENSTLEISTER · UNKLARE BANKUMSÄTZE · ÜBERFÄLLIGE MIETEN
+OFFENE RECHNUNGEN · ABRECHNUNGEN MIT FRISTRISIKO · WARTUNGEN
+VERTRAGSFRISTEN · STEUERLICHE PRÜFPUNKTE
+```
+
+Die Inbox speichert möglichst keine redundanten fachlichen Zustände; sie aggregiert OperationalCase, Task, Deadline, Charge, BankTransaction, Ticket, WorkOrder, MaintenancePlan, ServiceContract, Settlement, TaxReviewItem.
+
+## 192.3 Kalender
+
+Ansichten: Monat, Woche, Agenda, Objekt. Einträge: Termine, Übergaben, Besichtigungen, Wartungen, Vertragsfristen, Aufgaben, Abrechnungsfristen, Wiedervorlagen. P1: read-only ICS-Feed. P2: CalDAV/externe Kalenderadapter. Ein externer Kalender darf niemals führendes System für Fachfristen werden.
+
+---
+
+# 193. M12 – vollständiger Mietvertrags-Lifecycle
+
+Lease beschreibt den Vertrag; ein zusätzlicher Lifecycle beschreibt die operativen Ereignisse:
+
+```text
+Vorvermietung → Vertrag → Einzug → laufende Vermietung → Kündigung/Vertragsende
+→ Auszug → Schäden/Forderungen → Kautionsabschluss → Archiv
+```
+
+---
+
+# 194. LeaseLifecycleEvent
+
+```prisma
+model LeaseLifecycleEvent {
+  id          String @id @default(cuid())
+  workspaceId String
+  leaseId     String
+  type        LeaseLifecycleEventType
+  occurredAt  DateTime
+  caseId      String?
+  documentId  String?
+  note        String?
+}
+```
+
+Typen: `CONTRACT_CREATED, CONTRACT_SIGNED, MOVE_IN_PLANNED, MOVE_IN_COMPLETED, NOTICE_RECEIVED, NOTICE_CONFIRMED, LEASE_END_CONFIRMED, MOVE_OUT_PLANNED, MOVE_OUT_COMPLETED, DEPOSIT_SETTLEMENT_STARTED, DEPOSIT_SETTLED, LEASE_ARCHIVED`. Diese Events ersetzen niemals die historisierten Vertragsdaten.
+
+---
+
+# 195. Übergabe- und Abnahmeprotokoll
+
+## 195.1 Inspection
+
+```prisma
+model Inspection {
+  id          String @id @default(cuid())
+  workspaceId String
+  type        InspectionType   // MOVE_IN | MOVE_OUT | INTERIM | TECHNICAL | DAMAGE | OTHER
+  status      InspectionStatus
+  propertyId  String
+  unitId      String?
+  leaseId     String?
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  caseId      String?
+  generatedDocumentId String?
+}
+```
+
+## 195.2 Räume und Feststellungen
+
+```text
+Inspection
+ ├── InspectionArea
+ │    ├── InspectionFinding
+ │    └── Documents/Fotos
+ ├── MeterReadings
+ ├── KeyHandovers
+ └── Participants
+```
+
+InspectionFinding: Zustand, Beschreibung, Kategorie, Schweregrad, Foto(s), bereits vorhanden?, neu festgestellt?, Mieter anerkannt?, weitere Bearbeitung erforderlich? Fotos laufen über das bestehende Dokument-/Storage-System.
+
+---
+
+# 196. Zähler bei Einzug/Auszug
+
+Es entsteht keine zweite Zählerwelt. Ein im Übergabeprotokoll erfasster Stand erzeugt einen regulären `MeterReading` mit `source = INSPECTION`, `inspectionId`, optional `photoDocumentId`, `submittedBy`, `confirmedBy`.
+
+---
+
+# 197. Schlüsselverwaltung
+
+## 197.1 KeySet
+
+```text
+Property / Unit / Lease → KeySet → KeyItem
+```
+
+Schlüsselarten z. B. Haustür, Wohnung, Keller, Briefkasten, Garage, Tor, Technikraum — je Art: expectedCount, issuedCount, returnedCount, identifier?, note?.
+
+## 197.2 KeyHandover
+
+Jede Ausgabe/Rückgabe wird historisiert: `ISSUE, RETURN, LOST, REPLACED`. Ein fehlender Schlüssel wird nicht nur als Freitext im Übergabeprotokoll gespeichert.
+
+---
+
+# 198. Schäden beim Auszug
+
+```text
+InspectionFinding
+       ↓
+DamageClaim
+       ├── WorkOrder
+       ├── VendorInvoice
+       ├── Charge
+       └── DepositApplication
+```
+
+Sauber getrennt: Was wurde festgestellt? Was wurde repariert? Was hat es gekostet? Wer trägt welchen Betrag?
+
+---
+
+# 199. Wohnungsgeberbestätigung
+
+Der Move-in-Workflow enthält einen Generator für die Wohnungsgeberbestätigung — ausschließlich aus vorhandenen Stammdaten (Wohnungsgeber, ggf. Eigentümer, einziehende Personen, Objektanschrift, Einzugsdatum). Das erzeugte Dokument wird als GeneratedDocument dem Lease, der Party und dem MoveInCase zugeordnet. Die Vorlage ist versioniert; rechtliche Inhalte werden nie still per Softwareupdate ausgetauscht, nachdem ein Dokument erzeugt wurde.
+
+---
+
+# 200. Kündigung und Vertragsende
+
+Ein Kündigungsvorgang speichert mindestens: `noticeReceivedAt, noticeByParty, noticeType, requestedEndDate, confirmedEndDate, documentId, caseId`. Die juristische Wirksamkeit wird nicht automatisch behauptet. Mietfuchs unterstützt: Eingang dokumentieren, Fristen vorberechnen, Prüfungshinweise anzeigen, Kündigungsbestätigung erzeugen, Übergabeprozess starten, Lease-Ende nach Bestätigung historisieren.
+
+---
+
+# 201. Mieterhöhung als Workflow
+
+RentAdjustment bleibt fachliche Entität; ergänzt werden Prozesszustände: `DRAFT, CALCULATED, REVIEW_REQUIRED, APPROVED, NOTICE_GENERATED, SENT, EFFECTIVE, REJECTED, CANCELLED`. Methoden mindestens: `INDEX, STEP, AGREEMENT, COMPARABLE_RENT, MODERNIZATION, MANUAL`. Für INDEX und STEP kann stärker automatisiert werden; für komplexere Tatbestände gilt: berechnen/vorbereiten/dokumentieren ≠ rechtliche Zulässigkeit verbindlich feststellen. Eine wirksame Anpassung erzeugt neue historisierte LeaseComponent-Perioden.
+
+---
+
+# 202. M13 – Forderungsmanagement und Mahnwesen
+
+Die Kette `Charge → Payment → PaymentAllocation → Outstanding` wird um den operativen Forderungsprozess ergänzt.
+
+---
+
+# 203. DunningCase
+
+```text
+Charge bleibt unverändert → DunningCase → DunningAction[]
+```
+
+DunningAction: `REMINDER, FIRST_NOTICE, SECOND_NOTICE, FINAL_NOTICE, PAYMENT_AGREEMENT, HANDOVER_LEGAL, DISPUTED, WRITE_OFF_PROPOSAL, CLOSED` — jede Aktion speichert date, outstandingAmountSnapshot, generatedDocumentId?, correspondenceId?, note.
+
+---
+
+# 204. Mahnregeln
+
+Konfigurierbar je Workspace: Grace Period, Reminder nach X Tagen, weitere Wiedervorlage nach X Tagen, Mahngebühr optional, Verzugszinsberechnung optional. Keine rechtlich zulässige Pauschale/Gebühr wird ohne konfigurierbare Regel und nachvollziehbare Grundlage hart codiert.
+
+---
+
+# 205. Mahnkosten
+
+Mahnkosten/Nebenforderungen sind **eigene** Charges (`Charge Miete 1.000 EUR` + `Charge Mahnkosten 5 EUR`), nie eine Mutation der Ursprungsforderung — Zahlung, Steuer, Erlass, Rechtsstreit und Auswertung bleiben nachvollziehbar.
+
+---
+
+# 206. Zahlungsvereinbarung
+
+`PaymentAgreement` / `PaymentAgreementInstallment`: debtorParty, linkedCharges, agreedTotal, installments, dueDates, status, document. Eine Ratenzahlungsvereinbarung verändert die Ursprungsforderungen nicht rückwirkend.
+
+---
+
+# 207. SEPA
+
+P1: SepaMandate, pain.008-Export, Mandatsreferenz, Unterschriftsdatum, Status, letzte Verwendung. Optional später: pain.001-Überweisungsdatei. Mietfuchs wird kein Payment Service Provider.
+
+---
+
+# 208. Dokumente werden zur Dokumentenakte
+
+Document bleibt der gespeicherte Inhalt. Zusätzliche fachliche Ebenen: `Document, GeneratedDocument, Template, Correspondence, Delivery`.
+
+---
+
+# 209. Template
+
+```prisma
+model DocumentTemplate {
+  id             String @id @default(cuid())
+  workspaceId    String
+  type           TemplateType
+  name           String
+  subjectTemplate String?
+  bodyTemplate    String
+  version        Int
+  status         TemplateStatus
+  jurisdiction   String?
+  validFrom      DateTime?
+  validTo        DateTime?
+  reviewedAt     DateTime?
+  sourceNote     String?
+  createdAt      DateTime @default(now())
+}
+```
+
+Beispiele: Wohnungsgeberbestätigung, Übergabeprotokoll, Zahlungserinnerung, Mahnung, Kündigungsbestätigung, Index-/Staffelmieterhöhung, Mietschuldenfreiheitsbescheinigung, Ankündigung Wartung, Schreiben Betriebskostenabrechnung. Eigene Templates müssen möglich sein.
+
+---
+
+# 210. GeneratedDocument
+
+Beim Rendern werden gespeichert: templateId, templateVersion, renderedAt, contextSnapshot, SHA-256, Document. Beim Versand wird das erzeugte Dokument unveränderlich — spätere Stammdaten- oder Vorlagenänderungen verändern es nicht.
+
+---
+
+# 211. Correspondence
+
+Der kommunizierte Inhalt: sender, recipient(s), subject, body, relatedCase/Lease/Property, attachments.
+
+---
+
+# 212. Delivery
+
+Kanäle: `EMAIL, PORTAL, PRINT, LETTER, REGISTERED_LETTER, MANUAL_HANDOVER` — Core-V1: EMAIL, PORTAL, PRINT/PDF, MANUAL_HANDOVER; postalische Versanddienste später als Adapter. Status: `DRAFT, QUEUED, SENT, DELIVERED_BY_PROVIDER, FAILED, BOUNCED, ACKNOWLEDGED`. **Wichtig:** DELIVERED_BY_PROVIDER ist nur der technisch gemeldete Providerstatus — Mietfuchs behauptet daraus keinen rechtssicheren Zugang.
+
+---
+
+# 213. Outbox
+
+Zentrale Postausgangsansicht: Entwürfe, wartet auf Versand, gesendet, fehlgeschlagen. Fehlgeschlagene E-Mails verschwinden niemals still; Retry muss explizit möglich sein.
+
+---
+
+# 214. Serien- und Objektkommunikation
+
+Beispiele: Wasser wird abgestellt, Heizungswartung, Baumaßnahme, Hausordnung, Ablesetermin. Vor Versand werden Objekt, Einheiten, Mietverhältnisse, konkrete Empfänger, Versandkanäle und Anhänge angezeigt; beim Versand wird der Empfängerkreis als Snapshot eingefroren.
+
+---
+
+# 215. M14 – Verträge, Dienstleister und Objektbetrieb
+
+## 215.1 ServiceContract
+
+Rechnungen reichen für die laufende Objektverwaltung nicht aus — der Vertrag wird eigenständig modelliert:
+
+```prisma
+model ServiceContract {
+  id              String @id @default(cuid())
+  workspaceId     String
+  type            ServiceContractType
+  propertyId      String?
+  buildingId      String?
+  unitId          String?
+  technicalAssetId String?
+  providerPartyId String
+  contractNumber  String?
+  title           String
+  startDate       DateTime
+  initialEndDate  DateTime?
+  noticePeriodValue Int?
+  noticePeriodUnit  PeriodUnit?
+  renewalValue    Int?
+  renewalUnit     PeriodUnit?
+  nextTerminationDate DateTime?
+  expectedAnnualCostCents Int?
+  status          ContractStatus
+  documentId      String?
+}
+```
+
+Typen: `MAINTENANCE, INSURANCE, ENERGY, WATER, ELECTRICITY, INTERNET, CABLE, CLEANING, GARDEN, CARETAKER, ELEVATOR, SMOKE_DETECTOR, METERING_SERVICE, WASTE, OTHER`
+
+---
+
+# 216. Vertragsfristen
+
+Aus Vertragsdaten entstehen operative Hinweise: Vertragsende, nächste Kündigungsmöglichkeit, Preisprüfung, automatische Verlängerung, nächste Wartung. Berechnete Kündigungstermine zeigen ihre Grundlage; der Anwender kann bestätigen oder korrigieren.
+
+---
+
+# 217. Versicherungen
+
+Versicherungen sind spezialisierte ServiceContracts mit Zusatzfeldern: policyNumber, coverageType, insuredValue?, deductible?, renewalDate?, brokerPartyId?. Typen z. B. `BUILDING, LIABILITY, ELEMENTARY, GLASS, LEGAL, OTHER`. Versicherungsleistungen/Erstattungen laufen über die Reimbursement-Logik (§82.14, §168).
+
+---
+
+# 218. Dienstleisterakte
+
+Party bleibt Personen-/Unternehmensidentität. Ein Dienstleister erhält über Relationen: Gewerke, Objekte, ServiceContracts, VendorQuotes, WorkOrders, VendorInvoices, Tickets, MaintenanceEvents. Auswertbar: letzter Auftrag, offene Aufträge, Gesamtkosten, Reaktionszeit optional, betreute Anlagen. Kein globales `PersonType = HANDWERKER`.
+
+---
+
+# 219. Angebot vor Auftrag
+
+Neu: **VendorQuote**. Ablauf: `Ticket → Angebotsanfrage → 1..n VendorQuote → Auswahl → WorkOrder → VendorInvoice`. VendorQuote enthält mindestens vendor, amount, date, validUntil, scope, document, status. Damit lassen sich Maßnahmen kalkulieren, bevor Kosten entstehen.
+
+---
+
+# 220. Gewährleistung / Garantie
+
+Bei technischen Anlagen und abgeschlossenen WorkOrders speicherbar: warrantyUntil, warrantyType, warrantyDocument. Bei neuem Ticket zur selben Anlage: Hinweis „Möglicherweise Gewährleistung/Garantie vorhanden." — keine automatische rechtliche Entscheidung.
+
+---
+
+# 221. Wiederkehrende Betreiber- und Kontrollpflichten
+
+Das Deadline-/Maintenance-System kann Vorlagen enthalten (Wartung, Prüfung, Ablesung, Vertragskontrolle, Versicherungsprüfung). Rechtliche/technische Pflichten werden nur als versionierte Templates mit Quelle und Prüfdatum ausgeliefert — niemals als universell geltende Pflicht für jedes Objekt angenommen.
+
+---
+
+# 222. CO₂-Kostenaufteilung wird P0
+
+Die modulare Architektur bleibt (`OperatingCosts Core ├── CO2Allocation └── HeatingCostIntegration`). Eine vollständige eigene HeizkostenV-Engine bleibt zunächst optional — **CO2Allocation gehört zum produktiven Kern**.
+
+---
+
+# 223. Zwei CO₂-Workflows
+
+## 223.1 Vermieter beschafft Wärme/Brennstoff
+
+```text
+Supplier Invoice → Brennstoff-/Wärmedaten → CO2AllocationCalculation
+→ landlordShare / tenantShare → Betriebskostenabrechnung
+```
+
+## 223.2 Mieter versorgt sich selbst (z. B. Gasetagenheizung)
+
+```text
+Tenant reicht Abrechnung/Nachweis ein → CO2ReimbursementCase → Prüfung
+→ CO2AllocationCalculation → landlordShare → Auszahlung oder Verrechnung → Abschluss
+```
+
+Dieser Fall muss unabhängig von einer zentralen Heizkostenabrechnung funktionieren.
+
+---
+
+# 224. CO2AllocationCalculation
+
+Felder: sourceDocument, building, period, energyCarrier, energyQuantity, co2Quantity, co2Cost, buildingArea, ruleVersion, calculationInputs, landlordShare, tenantShare, manualOverride?, overrideReason?. Das Ergebnis muss jederzeit reproduzierbar sein; gesetzliche Stufen/Regeln stehen nicht als verstreute Magic Numbers im Fachcode.
+
+---
+
+# 225. Externe Heizkostenabrechnung
+
+Für viele private Vermieter ist ein externer Messdienst sinnvoll. P1: **HeatingCostStatementImport** — manuelle Erfassung, CSV-Import, strukturierter Adapter, PDF als Originalbeleg.
+
+```text
+externe Abrechnung → Import → Zuordnung Property/Unit/Lease → Plausibilitätsprüfung
+→ freigegebener Snapshot → SettlementInput
+```
+
+Keine stillschweigende Übernahme ungeprüfter Fremddaten.
+
+---
+
+# 226. Unterjährige Verbrauchsinformation (UVI)
+
+P1: ConsumptionPeriod, ConsumptionValue, ConsumptionComparison, ConsumptionNotice — getrennt von der eigentlichen Betriebskostenabrechnung. Datenquellen: `MANUAL, IMPORT, PORTAL, EXTERNAL_METER_SERVICE, API`. P2: herstellerspezifische Adapter, generische REST-Adapter. Mietfuchs wird nicht zum proprietären Funkzähler-Gateway.
+
+---
+
+# 227. M15 – Mieterportal
+
+Die Rolle TENANT wird fachlich umgesetzt. Der Mieter sieht ausschließlich explizit freigegebene eigene Ressourcen.
+
+---
+
+# 228. Portal-Funktionen P1
+
+Mieter können: eigene Stammdaten ansehen, Mietvertragsdokumente ansehen, Betriebskostenabrechnungen ansehen, freigegebene Belege ansehen, Mietkonto/offene Positionen ansehen, Nachrichten empfangen/beantworten, Schadensmeldung erstellen, Fotos hochladen, Zählerstände einreichen, Termine/Übergaben ansehen, Dokumente herunterladen.
+
+Nicht automatisch: Fachdatensätze ändern, Zahlungen verbuchen, Lease/Charge ändern, bestehende MeterReadings überschreiben.
+
+---
+
+# 229. PortalSubmission
+
+Alle schreibenden Portalaktionen laufen über kontrollierte Submissions: MaintenanceSubmission, MeterReadingSubmission, ContactChangeRequest, DocumentSubmission, GeneralMessage.
+
+```text
+Mieter meldet Zählerstand 12.345 → MeterReadingSubmission → Plausibilitätsprüfung
+→ Accept → MeterReading
+```
+
+Nicht: Portal → direkt UPDATE MeterReading.
+
+---
+
+# 230. Schadensmeldung aus dem Portal
+
+```text
+MaintenanceSubmission → Ticket → WorkOrder → MaintenanceEvent
+```
+
+Der Mieter sieht den für ihn freigegebenen Bearbeitungsstatus (eingegangen, in Prüfung, beauftragt, Termin vereinbaren, erledigt). Interne Notizen und Kosten bleiben getrennt.
+
+---
+
+# 231. Portal-Dokumentfreigabe
+
+Eigene Relation **DocumentPortalGrant**: documentId, leaseId, partyId/userId, grantedAt, revokedAt?, grantedBy. Ein Dokument ist nie allein deshalb für einen Mieter sichtbar, weil es mit derselben Wohnung verknüpft ist.
+
+---
+
+# 232. Tenant Home Guide
+
+P2: Je Wohnung/Objekt eine kleine Informationsseite (Hausmeister/Notfallkontakt, Heizung, Müll, Internet, Hausordnung, Schlüsselhinweise, Wasserabsperrung, Zähler, FAQ). Ersetzt keinen Mietvertrag.
+
+---
+
+# 233. PWA statt nativer App
+
+Keine native iOS-/Android-App erforderlich. Die Webanwendung muss als responsive PWA insbesondere unterstützen: Übergabeprotokoll, Fotos, Zählerablesung, Schadensaufnahme, Aufgaben abhaken, Dokument anzeigen, Nachricht senden. P1: temporärer lokaler Entwurf bei Verbindungsabbruch — ein Offline-Entwurf gilt erst nach erfolgreicher Synchronisation als abgeschlossen.
+
+---
+
+# 234. M16 – Portfolio, Cashflow und Planung
+
+Die vorhandenen Daten werden zu einer Vermieter-Managementsicht zusammengeführt.
+
+---
+
+# 235. Dashboard
+
+```text
+Handlungsbedarf: überfällige Aufgaben · überfällige Mieten · unklare Bankumsätze
+                 offene Tickets · anstehende Wartungen · anstehende Vertragsfristen
+                 gefährdete Abrechnungsfristen · steuerliche Prüfpunkte
+Vermietung:      Einheiten gesamt · vermietet · leerstehend · in Übergabe
+                 auslaufende Mietverträge
+Finanzen:        Sollmiete Monat · Istmiete Monat · Rückstände · Einnahmen · Ausgaben
+                 Cashflow · nicht umlagefähige Kosten
+Technik:         offene Tickets · überfällige Wartungen · Kosten laufendes Jahr
+```
+
+---
+
+# 236. Objekt-Cockpit
+
+Je Property: Mieterliste, Soll/Ist-Miete, offene Forderungen, Betriebskostenstatus, laufende Verträge, Darlehen, Technische Assets, Wartungen, Tickets, Dokumente, Cashflow, Instandhaltungskosten, steuerlicher Status. Der Anwender darf nicht zwischen sechs Modulen springen müssen, um den Gesamtzustand eines Hauses zu verstehen.
+
+---
+
+# 237. Kennzahlen
+
+Mindestens: `occupancyRate, rentCollectionRate, outstandingRent, operatingIncome, nonRecoverableCosts, maintenanceCost, maintenanceCostPerM2, interestCost, principalPayments, cashFlowBeforeFinancing, cashFlowAfterFinancing`. Optional bei vorhandenem Anschaffungs-/Marktwert: `grossRentalYield, netRentalYield`. Jede Kennzahl besitzt eine dokumentierte Berechnungsdefinition.
+
+---
+
+# 238. Cashflow-Forecast
+
+Forecast über mindestens 12 Monate, optional 24/36. Inputs: LeaseComponents, geplante RentAdjustments, Loans, ServiceContracts, MaintenancePlans, RecurringExpenses, Budget, CapitalProjects. Outputs je Monat: erwartete Einnahmen, laufende Kosten, Zinsen, Tilgung, geplante Investitionen, erwarteter Netto-Cashflow. **Der Forecast ist kein Accounting und kein TaxEvent.**
+
+---
+
+# 239. Budget
+
+`Budget` / `BudgetLine` mit Dimensionen Property, FinancialCategory, TechnicalAsset optional, Year/Period. Vergleich: Budget · Committed · Actual · Forecast · Variance.
+
+---
+
+# 240. CapitalProject
+
+Größere Maßnahmen (Dach, PV, Heizung, Fenster, Fassade, Badsanierung) getrennt von einzelnen Tickets:
+
+```text
+CapitalProject
+ ├── Budget
+ ├── VendorQuotes
+ ├── WorkOrders
+ ├── VendorInvoices
+ ├── TechnicalAssets
+ └── Documents
+```
+
+Geplante und tatsächliche Kosten vergleichbar. Steuerliche Aktivierung folgt weiterhin ausschließlich der Tax Layer.
+
+---
+
+# 241. M17 – Datenportabilität und technischer Betrieb
+
+Self-hosted Software darf ihre Nutzer nicht in der eigenen Datenbank einsperren.
+
+---
+
+# 242. Massenimport
+
+Import-Assistenten mindestens für: Properties, Buildings, Units, Parties, Leases, LeaseComponents, historische Mietänderungen, Charges, Payments, BankTransactions optional, Meters, MeterReadings, TechnicalAssets, Loans, Depreciation opening values, ServiceContracts. Formate: CSV, XLSX.
+
+```text
+Upload → Spalten-Mapping → Preview → Validierung → Fehlerliste → Dry Run
+→ Import → Ergebnisprotokoll
+```
+
+Kein stilles Ignorieren fehlerhafter Zeilen.
+
+---
+
+# 243. Historische Anfangsbestände
+
+Für Umsteiger unterstützt das System einen definierten Stichtag: Mietforderung zum Stichtag, Kautionssaldo, Darlehensrestschuld, AfA-Restwert, Bank-Anfangsbestand, offener §82b-Betrag, Rücklagenbestand. Keine vollständige historische Rekonstruktion zwingend erforderlich.
+
+---
+
+# 244. Vollständiger Datenexport
+
+Jederzeit vollständiger Export: `metadata.json, properties.csv, units.csv, parties.csv, leases.csv, …, documents/`. Optional: JSON domain export. Ziel: **Kein Vendor Lock-in — auch nicht bei Self-Hosting.**
+
+---
+
+# 245. Backup und Restore
+
+PostgreSQL und Dokumentstorage müssen gemeinsam sicherbar sein. Admin-UI zeigt: letztes erfolgreiches Backup, Backup-Alter, DB-Größe, Storage-Größe, Restore-Dokumentation. P1: manuell auslösbares konsistentes Backup-Paket. P2: Backup-Scheduler. **Restore muss in Integrationstests tatsächlich geprüft werden** — ein Backup, das nie testweise wiederhergestellt wurde, gilt nicht als nachgewiesene Wiederherstellbarkeit.
+
+---
+
+# 246. System-Administration
+
+Admin-Cockpit: App-Version, DB-Schema-Version, Migration-Status, PostgreSQL erreichbar, Storage schreibbar, freier Speicher, SMTP-Status, OIDC-Status, Ollama/AI-Status optional, letzter CAMT-Import, letztes Backup, fehlgeschlagene Jobs, Outbox-Fehler. Aktionen: SMTP testen, OIDC-Konfiguration testen, Storage testen, Backup auslösen, Systemdiagnose exportieren. Keine Secrets vollständig im UI anzeigen.
+
+---
+
+# 247. Hintergrundjobs
+
+Der modulare Monolith erhält eine kontrollierte Job-Schicht: Charge generation, Deadline generation, Reminder generation, Maintenance due check, ServiceContract due check, Dunning suggestions, Tax year checks, Backup optional, Outbox delivery. Anforderungen: idempotent, retry-fähig, sichtbarer Status, Fehlerhistorie, kein stiller Datenverlust. Kein Microservice-System erforderlich.
+
+---
+
+# 248. Audit Trail
+
+Zusätzlich zum unveränderlichen Accounting-Journal ein operativer Audit Trail. Mindestens: `CREATE, UPDATE, DELETE/ARCHIVE, STATUS_CHANGE, PORTAL_GRANT, PORTAL_REVOKE, SEND, IMPORT, APPROVE, REJECT` — gespeichert mit user, timestamp, entity, entityId, action, summary, relevanten before/after-Werten. Passwörter, Tokens oder andere Secrets werden niemals in Audit-Diffs gespeichert.
+
+---
+
+# 249. Datenschutz und Aufbewahrung
+
+Status und Aufbewahrung personenbezogener Daten werden getrennt von Löschung modelliert. Besonders relevant: ehemalige Mieter, Interessenten, Portalaccounts, Korrespondenz, Schadensfotos, Bewerbungsunterlagen. P2: RetentionPolicy, RetentionCandidate, ReviewBeforeDeletion. Keine automatische Löschung aufbewahrungspflichtiger Dokumente allein aufgrund des Alters.
+
+---
+
+# 250. P2 – Leerstand und Neuvermietung
+
+Relevant, aber keine Voraussetzung für Mietfuchs Next 1.0. Minimaler späterer Workflow:
+
+```text
+Unit wird frei → VacancyCase → Prospect → Viewing → Application → Decision
+→ Party → Lease → MoveInCase
+```
+
+---
+
+# 251. Prospect
+
+Prospect: contact data, desiredUnit, status, createdAt, retentionUntil?. Status: `NEW, CONTACTED, VIEWING, APPLIED, SHORTLIST, ACCEPTED, REJECTED, WITHDRAWN, ARCHIVED`. Bewerbungsdaten werden nicht dauerhaft in Party übernommen, solange kein Mietverhältnis entsteht.
+
+---
+
+# 252. Nicht Bestandteil des Neuvermietungs-Core
+
+Kein Core-Zwang für: SCHUFA-Integration, Bonitätsanbieter, Identitätsprüfung, Zahlungsdienst, Immobilienportal-Scraping, vollautomatische Mieterauswahl. Spätere Adapter möglich. P2: OpenImmo-Export, Portaladapter, externe E-Signatur.
+
+---
+
+# 253. Elektronische Signaturen
+
+Kein eigener qualifizierter Signaturdienst. Unterschieden werden: `SIGNATURE_CAPTURE, EXTERNAL_E_SIGNATURE, SIGNED_DOCUMENT_UPLOAD`. Eine auf einem Tablet gezeichnete Unterschrift im Übergabeprotokoll darf nicht als qualifizierte elektronische Signatur bezeichnet werden. Externe E-Signaturdienste später über Adapter.
+
+---
+
+# 254. Custom Fields und Tags
+
+P2: Administratoren können Custom Fields definieren — zunächst für Property, Unit, Party, Lease, TechnicalAsset, ServiceContract. Custom Fields dürfen keine zentrale Fachlogik umgehen: „Haustürcode" ist vertretbar; „offene Miete", „Eigentumsanteil", „AfA-Satz" gehören ins Fachmodell.
+
+---
+
+# 255. Suchfunktion
+
+Globale Suche mindestens über Property, Unit, Party, Lease, Invoice, Document, Ticket, TechnicalAsset, ServiceContract, Case. Dokumente — P1: Metadaten, Dateiname, Kategorien, verknüpfte Fachobjekte; P2: Volltextindex, OCR-Text. KI-Suche darf die normale Suche nicht ersetzen.
+
+---
+
+# 256. Marktvergleich: bewusst übernommene Muster
+
+**Aus deutschen Vermieterprodukten:** Vorgangsmanagement mit Wiedervorlage, mobile Übergabe, Mieteingangskontrolle, Mahnworkflow, Mietvertrags-/Mieterwechsel-Assistenten, Dokumentvorlagen, Mieterportal, Cashflow-Dashboard, externer Heizkostenimport, UVI.
+
+**Aus Open-Source-Systemen:** Tenant-/Landlord-Trennung, Outbox, SEPA-Mandate, Kalender, Audit Trail, ServiceContracts, Versicherungsakte, Key Tracking, Lease-Schedules, API-fähige Fachmodule.
+
+**Aus größeren internationalen Property-Systemen:** Maintenance Request → Work Order, Angebot → Auftrag → Rechnung, wiederverwendbare Prozessvorlagen, mobile Inspections, Lease-expiry alerts, Resident Self Service, Portfolio-KPIs.
+
+Diese Muster werden nicht 1:1 kopiert, sondern auf die Zielgruppe privater deutscher Vermieter reduziert.
+
+---
+
+# 257. Bewusst nicht übernommen
+
+Mietfuchs soll kein ERP und keine professionelle Verwalterplattform für 20.000 Einheiten werden. Nicht Bestandteil von V1: HR, Payroll, Lagerverwaltung, Materiallager, Beschaffungssystem, Sales Orders, Security-Guard-Attendance, WEG-Versammlungsverwaltung, Verwalterhonorare, Eigentümerakquise, Makler-CRM, Payment Processing, eigener Mailserver, eigener OIDC Provider, eigener Signaturdienst, Callcenter, native Mobile Apps, Microservices. Ebenfalls kein Core-Ziel: vollständiger WEG-Verwalter — die WEG-Eigentümerabrechnung aus Vermietersicht (§82.9) bleibt dagegen Bestandteil des Tax-/Betriebskostenumfangs.
+
+---
+
+# 258. Neue Gesamtarchitektur
+
+```text
+                            MIETFUCHS NEXT
+                                 UI
+                                  │
+           ┌──────────────────────┼─────────────────────┐
+           │                      │                     │
+           ↓                      ↓                     ↓
+       Cockpit                 Fachmodule           Mieterportal
+       Inbox                   Property             Dokumente
+       Kalender                Lease                Nachrichten
+       Vorgänge                Banking              Meldungen
+                                Costs                Zähler
+                                Technical
+                                  │
+                    ┌─────────────┼─────────────┐
+                    │             │             │
+                    ↓             ↓             ↓
+                OPERATIONS    ACCOUNTING       TAX
+                    │             │             │
+          Case / Task /      AccountingEvent   TaxEvent
+          Deadline /         JournalEntry      Determination
+          Correspondence     JournalLine       Assessment
+                    │             │             │
+                    └─────────────┼─────────────┘
+                                  │
+                              PostgreSQL
+                                  │
+                         Document Storage
+```
+
+Operations beantwortet: Was muss getan werden? Accounting: Was ist wirtschaftlich passiert? Tax: Wie wird es steuerlich behandelt? **Keine der drei Schichten ersetzt eine andere.**
+
+---
+
+# 259. Automatische Domänenereignisse
+
+Relevante Fachereignisse dürfen operative Vorgänge auslösen:
+
+```text
+Lease notice recorded                      → MoveOutCase
+Lease begins in 14 days                    → MoveIn checklist
+Charge overdue                             → Dunning suggestion
+MaintenancePlan due                        → MaintenanceCase
+ServiceContract termination window begins  → Deadline/Task
+Settlement period ends                     → SettlementCase
+CO2 claim submitted                        → CO2ReimbursementCase
+```
+
+Zur Vermeidung von Doppelanlagen werden `eventKey, workflowTemplateVersion, sourceEntity, sourceEntityId` idempotent verarbeitet.
+
+---
+
+# 260. Testfälle Operations
+
+```text
+T240 Lease-Ende:        Lease endet 31.05. → genau ein MoveOutCase;
+                        erneuter Joblauf erzeugt keinen zweiten Case
+T241 WorkflowTemplate:  laufender MoveOutCase aus Template v1; Template → v2
+                        → bestehender Case bleibt unverändert
+T242 Deadline:          Vertragsfrist automatisch berechnet
+                        → baseDate, ruleVersion und dueDate gespeichert
+T243 Deadline Override: Nutzer korrigiert dueDate
+                        → ursprüngliche Berechnung bleibt auditierbar
+```
+
+---
+
+# 261. Testfälle Übergabe
+
+```text
+T250 Move-in: Übergabe mit 3 Zählern und 5 Schlüsselarten → 3 reguläre MeterReadings,
+              KeyHandovers vollständig, PDF-Snapshot
+T251 Foto:    Foto zu Schaden → Document gespeichert, InspectionFinding-Link, SHA-256
+T252 Schaden: Finding → DamageClaim → WorkOrder → Invoice; keine automatische
+              Mieterforderung ohne bestätigte DamageClaim-Zuordnung
+```
+
+---
+
+# 262. Testfälle Mahnwesen
+
+```text
+T260 Mietrückstand:            Charge 1.000, Payment 700 → outstanding 300, Mahnsnapshot 300
+T261 Teilzahlung nach Mahnung: Mahnstand 300, danach Payment 100 → Charge outstanding 200,
+                               historische Mahnung behält Snapshot 300
+T262 Mahnkosten:               Mahnkosten 5 → neue Charge 5, Ursprungs-Charge unverändert
+T263 Zahlung vollständig:      outstanding = 0 → offener DunningCase wird als resolved
+                               vorgeschlagen/automatisch geschlossen
+```
+
+---
+
+# 263. Testfälle Dokumente
+
+```text
+T270 Vorlage: Template v1 erzeugt Mahnung, danach Template v2
+              → erzeugtes Dokument bleibt Byte-/Hash-identisch
+T271 Bulk:    10 Empfänger beim Versand; später zieht ein Mieter aus
+              → RecipientSnapshot des alten Versands bleibt 10
+T272 Portal:  Document mit Unit verknüpft, aber kein DocumentPortalGrant
+              → Tenant sieht Dokument nicht
+```
+
+---
+
+# 264. Testfälle ServiceContracts
+
+```text
+T280 Vertrag:   Kündigungsfrist 3 Monate → berechnete Deadline enthält baseDate + ruleVersion
+T281 Rechnung:  erwartete Jahreskosten 500, VendorInvoice 550
+                → Vertrag unverändert, Actual = 550, Abweichung = 50
+T282 WorkOrder: Quote 1.000, WorkOrder 1.000, Invoice 1.150
+                → estimate/committed/actual getrennt auswertbar
+```
+
+---
+
+# 265. Testfälle Portal
+
+```text
+T290 Meter submission: Mieter reicht 12345 ein → noch kein MeterReading;
+                       Admin bestätigt → genau ein MeterReading
+T291 Ticket:           Mieter meldet Schaden → Ticket; interne WorkOrder-Kosten
+                       für Mieter nicht sichtbar
+T292 Rechte:           Mieter A ruft Dokument von Mieter B über bekannte ID ab
+                       → 404/403 ohne Datenleck
+```
+
+---
+
+# 266. Testfälle Backup / Import
+
+```text
+T300 CSV Dry Run:       100 Zeilen, 3 fehlerhaft → Import schreibt 0 Datensätze,
+                        Fehlerliste enthält exakt 3 Zeilen
+T301 bestätigter Import: 97 gültige Zeilen → genau 97 Datensätze
+T302 Restore:           Backup einer Fixture-Instanz → leere Instanz → Restore
+                        → identische Domain-Summen + Dokument-Hashes
+```
+
+---
+
+# 267. Neue Milestones
+
+Die bestehende Planung M1–M10 wird ergänzt:
+
+**M11 – Vorgänge, Aufgaben & Fristen** — Haupt-Issue „Operational Core": OperationalCase, Task, Deadline, Reminder, WorkflowTemplate, Inbox, Kalender. Subissues: OperationalCase + Task · Deadline + versionierte Regeln · WorkflowTemplate · Reminder-/Job-Engine · operative Inbox · Kalender + ICS Feed · Operations-Audit. DoD: T240–T243 grün, keine zweite fachliche Wahrheit, idempotente Workflow-Erzeugung, Fristgrundlage sichtbar, überfällige Vorgänge im Cockpit.
+
+**M12 – Mietvertrags-Lifecycle & Dokumente** — Haupt-Issues: LeaseLifecycle, Inspection/Übergabe, KeySet/KeyHandover, DamageClaim, RentAdjustment-Workflow, DocumentTemplate/GeneratedDocument, Correspondence/Delivery/Outbox. Subissues: LeaseLifecycleEvent · MoveInCase/MoveOutCase · mobile Inspection · InspectionFinding + Fotos · Zählerintegration · Schlüsselverwaltung · DamageClaim · Wohnungsgeberbestätigung · Kündigungsworkflow · Mieterhöhungsworkflow · Template Engine · GeneratedDocument Snapshot · Correspondence · Delivery + Outbox · Bulk Communication. DoD: vollständiger Einzug ohne externe Excel-/Word-Liste, vollständiger Auszug dokumentierbar, Zählerstände in regulärer Historie, Schlüssel historisiert, Schäden bis Kaution/WorkOrder verfolgbar, versandte Dokumente unveränderlich.
+
+**M13 – Forderungen & Mieterportal** — Haupt-Issues: Dunning, PaymentAgreement, SEPA, Tenant Portal, PortalSubmission. Subissues: DunningCase · DunningAction · Mahnvorlagen · Mahnkosten als eigene Charge · Ratenzahlungsvereinbarung · SEPA Mandate · pain.008 Export · Tenant Portal Resource Scope · DocumentPortalGrant · MaintenanceSubmission · MeterReadingSubmission · Portal Messaging · Portal Permission Tests. DoD: offene Miete → Zahlungserinnerung → Zahlung nachvollziehbar, Teilzahlungen funktionieren, historische Mahnsnapshots unverändert, Tenant sieht nur freigegebene eigene Ressourcen, Portal schreibt nie ungeprüft in gebuchte Fachobjekte.
+
+**M14 – Objektbetrieb & Energie** — Haupt-Issues: ServiceContract, VendorQuote, Insurance, Warranty, CO2Allocation, HeatingCostStatementImport, UVI. Subissues: ServiceContract · Vertragsfristberechnung · Versicherungsdaten · Dienstleisterakte · VendorQuote · WorkOrder Estimate/Committed/Actual · Warranty-Warnung · CO2Allocation Core · CO2ReimbursementCase · zentraler CO2-Workflow · externer Heizkostenimport · UVI-Datenmodell · Verbrauchsimportadapter. DoD: laufende Objektverträge vollständig sichtbar, Kündigungs-/Wartungsfristen im Cockpit, Angebot → Auftrag → Rechnung nachvollziehbar, CO₂ zentral und dezentral abbildbar, externe Heizkostenwerte kontrolliert in SettlementInput übernehmbar.
+
+**M15 – Portfolio & Planung** — Haupt-Issues: Portfolio Dashboard, Property Cockpit, Budget, Cashflow Forecast, CapitalProject. Subissues: KPI Definitions · Portfolio Dashboard · Property Cockpit · Budget/BudgetLine · 12–36-Monats-Cashflow · CapitalProject · Budget vs. Committed vs. Actual. DoD: Ein privater Vermieter kann je Objekt unmittelbar beantworten: Was kommt herein? Was geht heraus? Was ist offen? Was ist überfällig? Was kostet die Technik? Welche größeren Ausgaben kommen? Wie entwickelt sich der Cashflow?
+
+**M16 – Datenmigration, Portabilität & Systembetrieb** — Haupt-Issues: Import Wizard, Opening Balances, Full Export, Backup/Restore, System Administration, Job Monitoring, Operational Audit. Subissues: CSV/XLSX Mapping Framework · Property/Unit/Party Import · Lease Import · Payment/Meter/Asset Import · Opening Balances · kompletter Domain Export · Dokumentexport · konsistentes Backup · Restore-Test · Admin Cockpit · Health Checks · Background Job Monitor · allgemeiner Audit Trail · Retention Review. DoD: Excel-Bestandsvermieter können migrieren, Daten vollständig wieder exportierbar, Backup/Restore nachgewiesen, Admin erkennt technische Fehler ohne Shell-Zugriff.
+
+---
+
+# 268. Priorisierung für Mietfuchs Next 1.0
+
+**P0 — für eine überzeugende private Vermieterlösung:** OperationalCase/Task/Deadline · Inbox · MoveIn/MoveOut · Übergabeprotokoll · Zähler + Schlüssel · DocumentTemplate/GeneratedDocument · Correspondence/Outbox · Mahnworkflow · ServiceContract · CO2Allocation · Massenimport · Backup/Restore · Admin Cockpit
+
+**P1 — unmittelbar danach:** Tenant Portal · PaymentAgreement · SEPA · VendorQuote · externer Heizkostenimport · UVI · Portfolio Dashboard · Cashflow Forecast · Budget/CapitalProject · PWA Offline Draft · ICS Kalender
+
+**P2:** Prospect/Vacancy Management · OpenImmo · externe E-Signatur · Volltext/OCR-Suche · Custom Fields · Tenant Home Guide · CalDAV · herstellerspezifische Meteradapter · Owner Portal · Postal Delivery Adapter
+
+---
+
+# 269. Definition of Done – „Mietfuchs Next für private Vermieter"
+
+Eine Version darf fachlich als vollständige Mietfuchs-Next-Version bezeichnet werden, wenn folgende End-to-End-Szenarien ohne externe Schattenlisten funktionieren:
+
+```text
+A – neuer Mieter:       Lease anlegen → Einzugsvorgang → Wohnungsgeberbestätigung
+                        → Übergabe → Fotos → Schlüssel → Zähler → Miet-Soll → Kaution
+                        → Dokumentakte
+B – Miete fehlt:        Charge → CAMT → kein Matching → offener Posten → Inbox
+                        → Zahlungserinnerung → Dokument/Versand → Teilzahlung
+                        → Restforderung → vollständige Zahlung → Abschluss
+C – Heizung defekt:     Meldung → Ticket → TechnicalAsset → Dienstleister → Angebot
+                        → WorkOrder → Termin → Rechnung → ExpenseAllocation
+                        → MaintenanceEvent → Lifetime Cost
+D – Mieter zieht aus:   Kündigung → Fristprüfung → MoveOutCase → Übergabe → Zähler
+                        → Schlüssel → Schäden → offene Mieten → DamageClaim
+                        → Kautionsverwendung → Rückzahlung → Lease Archive
+E – Jahresabrechnung:   Bank/Rechnungen → Kosten → externe Heizkosten optional → CO₂
+                        → Zähler → Settlement → Prüfung → Snapshot → Anschreiben
+                        → Portal/PDF → Settlement Charge
+F – Steuerjahr:         Payments, Invoices, Loans, AfA, WEG, TaxEvents
+                        → TaxDetermination → Steuerpaket → Eigentümeraufteilung
+                        → Anlage-V-Vorschau
+G – Vertragsmanagement: ServiceContract → Kündigungsfrist → Reminder
+                        → Angebot/Vertragsprüfung → neue Periode oder Kündigung
+                        → Rechnungen bleiben historisch verknüpft
+H – Serverausfall:      neue Instanz → Restore → Datenbank → Dokumente
+                        → Benutzer-/Workspace-Daten → identische fachliche Bestände
+```
+
+---
+
+# 270. Schlussfolgerung
+
+Mit den §§188–269 wird Mietfuchs nicht zu einem ERP. Die Architektur bleibt bewusst klein, modular, self-hosted, deutsch, privater Vermieter zuerst.
+
+Der Unterschied:
+
+> Mietfuchs bisher / bisherige Next-Spec: „Ich kann meine Vermietung korrekt dokumentieren, abrechnen, finanziell auswerten und steuerlich vorbereiten."
+> Mietfuchs mit diesem Addendum: „Mietfuchs sagt mir zusätzlich, was ich als Vermieter als Nächstes tun muss, führt mich durch den Vorgang und hält das Ergebnis nachvollziehbar fest."
+
+Die zentrale Produktvision:
+
+> **Mietfuchs ist der digitale Arbeitsplatz für private Vermieter: Mietvertrag, Geld, Betriebskosten, Technik, Steuer, Dokumente und tägliche Verwaltungsarbeit in einem fachlich sauberen, lokalen bzw. self-hosted System — ohne ERP-Ballast und ohne Cloudzwang.**
+
