@@ -13,6 +13,7 @@ import assert from 'node:assert/strict'
 import { computeSettlement, daysInYear, overlapDays } from '../src/calc.ts'
 import { normalizeSettlement } from '../testing/normalize.js'
 import { loadFixtures, actualOf } from '../testing/fixtures.js'
+import { settlementInput } from '../testing/snapshot.js'
 
 const fixtures = loadFixtures()
 
@@ -47,9 +48,9 @@ function collectCentFields(value, path = '', out = []) {
   return out
 }
 
-test('I1 · alle Cent-Felder sind ganzzahlig (Invariante 17)', () => {
+test('I1 · alle Cent-Felder sind ganzzahlig (Invariante 17)', async () => {
   for (const fx of fixtures) {
-    const result = computeSettlement(fx.db(), fx.year)
+    const result = computeSettlement(await settlementInput(fx.db(), fx.year))
     for (const [path, value] of collectCentFields(result, fx.name)) {
       assert.equal(
         Number.isInteger(value),
@@ -62,10 +63,10 @@ test('I1 · alle Cent-Felder sind ganzzahlig (Invariante 17)', () => {
 
 // ---------- I2 · Verteilungsvollständigkeit ----------
 
-test('I2 · je Kostenposition gilt: Summe Mieteranteile + Vermieteranteil = Betrag', () => {
+test('I2 · je Kostenposition gilt: Summe Mieteranteile + Vermieteranteil = Betrag', async () => {
   for (const fx of fixtures) {
     const db = fx.db()
-    const result = computeSettlement(db, fx.year)
+    const result = computeSettlement(await settlementInput(db, fx.year))
     for (const item of db.costItems.filter((c) => c.year === fx.year)) {
       const tenantSum = result.statements
         .flatMap((st) => st.rows)
@@ -84,7 +85,7 @@ test('I2 · je Kostenposition gilt: Summe Mieteranteile + Vermieteranteil = Betr
   }
 })
 
-test('I2b · kein Cent verschwindet, wenn direkt einer nicht beteiligten Wohnung zugeordnet wird', () => {
+test('I2b · kein Cent verschwindet, wenn direkt einer nicht beteiligten Wohnung zugeordnet wird', async () => {
   // Eine Direktzuordnung darf auf eine Wohnung zeigen, die nicht an der Umlage teilnimmt
   // (z. B. eine Reparatur in der selbstbewohnten Wohnung). Dann gibt es kein Mieter-
   // Statement, das den Betrag aufnehmen könnte — er muss beim Vermieter landen.
@@ -134,7 +135,7 @@ test('I2b · kein Cent verschwindet, wenn direkt einer nicht beteiligten Wohnung
     payments: [],
     closedSettlements: [],
   }
-  const result = computeSettlement(db, 2025)
+  const result = computeSettlement(await settlementInput(db, 2025))
   const tenantSum = result.statements
     .flatMap((st) => st.rows)
     .reduce((a, r) => a + r.shareCents, 0)
@@ -147,20 +148,20 @@ test('I2b · kein Cent verschwindet, wenn direkt einer nicht beteiligten Wohnung
 
 // ---------- I3 · Determinismus ----------
 
-test('I3 · zweimaliges Rechnen liefert dasselbe Ergebnis', () => {
+test('I3 · zweimaliges Rechnen liefert dasselbe Ergebnis', async () => {
   for (const fx of fixtures) {
-    const first = actualOf(fx.db(), fx.year)
-    const second = actualOf(fx.db(), fx.year)
+    const first = await actualOf(fx.db(), fx.year)
+    const second = await actualOf(fx.db(), fx.year)
     assert.deepStrictEqual(second, first, `${fx.name} ist nicht deterministisch`)
   }
 })
 
 // ---------- I4 · Reihenfolgeunabhängigkeit (Spec §271.26) ----------
 
-test('I4 · die Eingabereihenfolge verändert das Ergebnis nicht (§271.26)', () => {
+test('I4 · die Eingabereihenfolge verändert das Ergebnis nicht (§271.26)', async () => {
   for (const fx of fixtures) {
-    const inOrder = actualOf(fx.db(), fx.year)
-    const reversed = actualOf(shuffled(fx.db()), fx.year)
+    const inOrder = await actualOf(fx.db(), fx.year)
+    const reversed = await actualOf(shuffled(fx.db()), fx.year)
     assert.deepStrictEqual(
       reversed,
       inOrder,
@@ -231,7 +232,7 @@ function dbWithSingleItem(item, unitOverrides = {}) {
   }
 }
 
-test('I6 · fehlende Verbrauchsbasis: Betrag an den Vermieter UND eine Warnung', () => {
+test('I6 · fehlende Verbrauchsbasis: Betrag an den Vermieter UND eine Warnung', async () => {
   const db = dbWithSingleItem({
     id: 'c1',
     year: 2025,
@@ -241,12 +242,12 @@ test('I6 · fehlende Verbrauchsbasis: Betrag an den Vermieter UND eine Warnung',
     key: 'meter',
     meterType: 'Heizung',
   })
-  const result = computeSettlement(db, 2025)
+  const result = computeSettlement(await settlementInput(db, 2025))
   assert.equal(result.landlord.totalCents, 40000)
   assert.equal(result.warnings.length, 1, 'der Datenmangel muss sichtbar gemeldet werden')
 })
 
-test('I6b · fehlende Flächenbasis: Betrag an den Vermieter UND eine Warnung', () => {
+test('I6b · fehlende Flächenbasis: Betrag an den Vermieter UND eine Warnung', async () => {
   // Sind bei allen beteiligten Wohnungen die Flächen nicht gepflegt, ist der Flächen-
   // schlüssel nicht anwendbar. Der Betrag landet dann vollständig beim Vermieter — das
   // ist rechnerisch korrekt, aber ohne Warnung bemerkt der Vermieter den Datenmangel nicht.
@@ -261,24 +262,24 @@ test('I6b · fehlende Flächenbasis: Betrag an den Vermieter UND eine Warnung', 
     },
     { areaM2: 0 },
   )
-  const result = computeSettlement(db, 2025)
+  const result = computeSettlement(await settlementInput(db, 2025))
   assert.equal(result.landlord.totalCents, 40000)
   assert.equal(result.warnings.length, 1, 'der Datenmangel muss sichtbar gemeldet werden')
 })
 
 // ---------- I7 · Deterministischer Tie-Break (Spec §56) ----------
 
-test('I7 · bei gleichem Nachkommaanteil entscheidet ein fachlicher Schlüssel, nicht die Eingabereihenfolge (§56)', () => {
+test('I7 · bei gleichem Nachkommaanteil entscheidet ein fachlicher Schlüssel, nicht die Eingabereihenfolge (§56)', async () => {
   const fx = fixtures.find((f) => f.name.startsWith('F04'))
   assert.ok(fx, 'F04 (Largest Remainder) muss existieren — es trägt diese Invariante')
 
-  const expected = normalizeSettlement(computeSettlement(fx.db(), fx.year))
+  const expected = normalizeSettlement(computeSettlement(await settlementInput(fx.db(), fx.year)))
   const winners = expected.statements.filter((st) => st.totalShareCents === 3334)
   assert.equal(winners.length, 1, 'genau ein Mietverhältnis erhält das Restcent')
   assert.equal(winners[0].tenancyId, 't1', 'das Restcent geht an das fachlich erste Mietverhältnis')
 
   // Dieselben Daten in umgekehrter Reihenfolge müssen dieselbe Zuteilung ergeben.
-  const reversed = normalizeSettlement(computeSettlement(shuffled(fx.db()), fx.year))
+  const reversed = normalizeSettlement(computeSettlement(await settlementInput(shuffled(fx.db()), fx.year)))
   assert.deepStrictEqual(
     reversed,
     expected,

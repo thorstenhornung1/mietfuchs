@@ -26,8 +26,8 @@ const fixtures = loadFixtures()
 assert.ok(fixtures.length > 0, 'keine Fixtures gefunden — der Golden Master wäre wirkungslos')
 
 for (const fx of fixtures) {
-  test(`Golden Master ${fx.name}`, () => {
-    const actual = actualOf(fx.db(), fx.year)
+  test(`Golden Master ${fx.name}`, async () => {
+    const actual = await actualOf(fx.db(), fx.year)
 
     if (process.env.GOLDEN === 'diff') {
       fs.writeFileSync(

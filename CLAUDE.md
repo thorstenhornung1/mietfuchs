@@ -62,6 +62,8 @@ Es gibt **keinen Linter** und keine Client-Tests. Typecheck läuft über `npm ru
   vergleicht das vollständige Abrechnungsergebnis cent-genau gegen eingefrorene Erwartungen
   aus `fixtures/settlement/F01…F10/`. Jedes Fixture besteht aus `db.json` (Eingabe),
   `expected.json` (Erwartung) und `README.md` (Handrechnung mit Spec-Referenz).
+- [repository.test.js](apps/server/test/repository.test.js) — der Vertrag des Persistenz-
+  Adapters: was in einen Schnappschuss gehört und was nicht.
 - [invariants.test.js](apps/server/test/invariants.test.js) — Eigenschaften, die für *jede*
   Eingabe gelten: Integer-Cent, Verteilungsvollständigkeit, Determinismus,
   Reihenfolgeunabhängigkeit, Zeitraumvollständigkeit, keine stillen Fallbacks,
@@ -112,6 +114,24 @@ Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip)
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
 /api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung.
+
+**Persistenzgrenze** (Spec §35): Die Berechnungen lesen ihre Daten nie direkt aus dem
+Speicher, sondern über ein Repository, das einen Schnappschuss liefert:
+
+```text
+Persistenz → Repository → SettlementInput/LedgerInput → Calc Core → Ergebnis
+```
+
+Die Schnittstelle steht in [packages/domain/src/repositories.ts](packages/domain/src/repositories.ts),
+die Snapshot-Typen in [packages/domain/src/settlement/input.ts](packages/domain/src/settlement/input.ts);
+**die Domäne importiert nie einen Datenbanktreiber** (Invariante 109). Heute liegt dahinter
+noch die db.json ([LegacyJsonRepository](apps/server/src/persistence/legacy-json-repository.ts),
+als Übergang von §271.18 ausdrücklich erlaubt); mit #3 treten SQLite und PostgreSQL an ihre
+Stelle, ohne dass Engine oder Routen das bemerken.
+
+Wichtig beim Bauen eines Snapshots: **Ablesungen dürfen nicht nach Jahr gefiltert werden.**
+Der Verbrauch wird zwischen zwei Ablesungen interpoliert, und der Anfangsstand eines Jahres
+ist die Ablesung vom 31.12. des Vorjahres. Ein Test hält das fest.
 
 **Berechnungs-Engine** ([apps/server/src/calc.ts](apps/server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
