@@ -331,6 +331,7 @@ Diese Regeln sind verbindlich und sollen in `AGENTS.md`/`CLAUDE.md` aufgenommen 
 18. A posted journal entry is always balanced
 19. A bank transaction is imported idempotently
 20. No silent fallback to "Sonstige" on unknown financial classification
+21. JournalEntry ≠ TaxEvent (Anlage V/Steuerreport nur aus TaxEvents, nie direkt aus dem Journal — siehe §82)
 ```
 
 ---
@@ -3405,4 +3406,362 @@ Das zentrale Architekturziel lautet:
 > **Mietfuchs bleibt für den Nutzer eine einfache deutsche Vermietersoftware. Intern erhält es aber die Datenintegrität und Auswertbarkeit eines kleinen ERP, ohne dessen Bedien- und Prozessballast zu übernehmen.**
 
 Der SKR03 V+V liefert dafür die standardisierte Finanzsprache. Property, Unit und TechnicalAsset liefern die Controlling-Dimensionen. Betriebskostenrecht und Steuerbehandlung bleiben getrennte fachliche Achsen. Damit sind Auswertungen über Jahre und Objekte vergleichbar, ohne die Software an einzelne DATEV-Kontonummern oder an einen bestimmten Steuerberater zu koppeln.
+
+---
+
+# 82. Steuerliche Gap-Analyse und Zielarchitektur (Steuerberater-Review)
+
+**Stand:** 30.08.2026 — Ergebnis des fachlichen Reviews durch den Steuerberater.
+
+Kernbefund: Nicht der SKR03 ist die größte verbleibende Lücke, sondern eine **eigene steuerliche Zeit- und Zurechnungslogik**. Die Spezifikation trennt bereits richtig Banktransaktion, Zahlung, Rechnung, Aufwand, Kaution und Tilgung — der bisher vorgesehene Steuerreport (§61) reicht steuerlich aber nicht, um verlässlich eine Anlage V bzw. ein Steuerberater-Paket zu erzeugen.
+
+Leitentscheidung: Mietfuchs wird **keine Steuerbuchhaltung** und kein DATEV-/ELSTER-Ersatz. Stattdessen wird eine relativ kleine, fachlich saubere **Tax Layer** zwischen Fachvorgänge und Steuerreport gesetzt. Ziel:
+
+> Mietfuchs kennt den steuerlich relevanten Sachverhalt vollständig und erzeugt ein prüfbares Steuerpaket. Der Steuerberater trifft die letztverbindliche steuerliche Würdigung.
+
+## 82.1 Gesamturteil
+
+| Bereich | Stand | Urteil |
+|---|---|---|
+| Miet-/Objektdomäne | 🟢 | sehr gut |
+| Bank / offene Posten | 🟢 | sehr gut |
+| Betriebskosten | 🟢 | stark |
+| technische Verwaltung | 🟢 | stark |
+| Finanzklassifikation / SKR03 | 🟢 | gut durchdacht |
+| Darlehen / Kaution | 🟢 | grundsätzlich richtig |
+| Steuerliche Periodisierung | 🔴 | wesentlicher Gap |
+| AfA / Anschaffung | 🟠 | Datenmodell vorhanden, Steuerlogik fehlt |
+| Erhaltungsaufwand | 🔴 | wesentliche Logik fehlt |
+| Eigentümer-/Feststellungslogik | 🔴 | struktureller Gap |
+| Eigentumswohnung / WEG | 🔴 | für Zielgruppe relevant, derzeit nicht abgedeckt |
+| verbilligte Vermietung / Selbstnutzung | 🔴 | fehlt |
+| USt / E-Rechnung | 🔴/🟠 | E-Rechnung heute Pflicht-Thema |
+| Steuer-Nachweis/Audit | 🟠 | gute Basis, steuerliche Entscheidungen fehlen |
+
+## 82.2 Geänderte Zielarchitektur
+
+Der bisherige Aufbau wird um genau eine Schicht ergänzt:
+
+```text
+Fachvorgänge
+Lease / Charge / Invoice / Payment / Loan / Asset
+                    │
+          ┌─────────┴──────────┐
+          ↓                    ↓
+AccountingEvent           TaxRecognition
+          ↓                    ↓
+JournalEntry              TaxEvent
+          │                    │
+          ↓                    ↓
+Finanzreport           Steuerreport
+                              │
+                    ┌─────────┴─────────┐
+                    ↓                   ↓
+                 Anlage V             DATEV
+```
+
+**Neue Invariante 21 (ergänzt §3):**
+
+```text
+21. JournalEntry ≠ TaxEvent
+```
+
+Der Anlage-V-/Steuerreport wird **niemals unmittelbar aus dem Journal erzeugt**, sondern ausschließlich aus TaxEvents.
+
+## 82.3 P0: TaxEvent und Zu-/Abflussprinzip (§ 11 EStG)
+
+Private Vermietung ist eine Überschusseinkunftsart nach § 21 EStG; im Kern gilt das Zu-/Abflussprinzip des § 11 EStG: Steuerlich zählt grundsätzlich, wann Geld tatsächlich zufließt bzw. abfließt — nicht Rechnungsdatum oder Sollstellung. Damit existieren drei verschiedene Wahrheiten:
+
+```text
+Mietvertrag / Charge  → Was schuldet der Mieter?
+Journal               → Welche Forderung besteht wirtschaftlich?
+TaxEvent              → Was ist in diesem Steuerjahr steuerpflichtig?
+```
+
+Beispiel: Dezember-Miete 2026 (1.000 €), gezahlt am 15.01.2027 → operativ Dezember 2026, Forderung 2026, steuerlich grundsätzlich Einnahme 2027. Umgekehrt ist ein `VendorInvoice` noch kein steuerlicher Werbungskostenabfluss.
+
+```prisma
+model TaxEvent {
+  id              String @id @default(cuid())
+  taxSubjectId    String
+  propertyId      String?
+  sourceType      String
+  sourceId        String
+  recognitionDate DateTime
+  taxYear         Int
+  amountCents     BigInt
+  taxCategory     String
+  recognitionRule TaxRecognitionRule
+  deductibleRatio Decimal?
+  legalBasis      String?
+  ruleVersion     String?
+}
+```
+
+```text
+recognitionRule:
+CASH_RECEIPT
+CASH_PAYMENT
+TEN_DAY_RULE
+DEPRECIATION
+SPECIAL_DEPRECIATION
+DISTRIBUTED_MAINTENANCE
+CAPITALIZATION
+NON_DEDUCTIBLE
+MANUAL_ADJUSTMENT
+```
+
+Dazu gehört die **10-Tage-Regel** für regelmäßig wiederkehrende Zahlungen rund um den Jahreswechsel (Zahlung und Fälligkeit innerhalb des Zehn-Tage-Zeitraums). Teilzahlungen erzeugen anteilige TaxEvents.
+
+## 82.4 P0: AcquisitionCostItem statt pauschaler Nebenkosten (ergänzt §18)
+
+Ein einziges Feld `incidentalCostsCents` ist steuerlich gefährlich. Zu trennen sind mindestens:
+
+```text
+Grunderwerbsteuer / Makler / Kaufvertragsnotar / Grundbuch Eigentumsumschreibung
+  → Anschaffungsnebenkosten
+Grundschuld / Finanzierungsnotar / Bankgebühr / Darlehensgebühr / Disagio
+  → Finanzierungskosten / gesonderte Behandlung
+```
+
+`Acquisition.incidentalCostsCents` wird durch `AcquisitionCostItem` (Betrag, Typ, steuerliche Einordnung, Belegverknüpfung) ersetzt.
+
+## 82.5 P0: AfA-Engine mit gesetzlichen Methoden (ergänzt §19)
+
+`DepreciableAsset.method` reicht nicht. 2026 bestehen mehrere AfA-Wege nebeneinander: reguläre Gebäude-AfA 3 % / 2 % / 2,5 % (abhängig von Fertigstellung und Gebäudeart), nachgewiesene kürzere tatsächliche Nutzungsdauer, degressive Gebäude-AfA 5 % vom Restwert für bestimmte neue Wohngebäude sowie zusätzlich die § 7b-Sonderabschreibung (bis 5 % jährlich in den ersten vier Jahren, parallel zur regulären AfA).
+
+```text
+DepreciableAsset
+    ↓
+DepreciationPlan[]        // mehrere parallele Pläne je Asset
+
+Plan-Typen:
+REGULAR_LINEAR
+REGULAR_DECLINING_5
+ACTUAL_USEFUL_LIFE
+SPECIAL_7B
+MANUAL_LEGACY
+```
+
+**Bestandsübernahme ist Pflicht:** Ein bereits zehn Jahre laufendes AfA-Objekt muss mit historischer AfA und Restwert übernommen werden können, ohne die Historie neu zu berechnen (`MANUAL_LEGACY`).
+
+## 82.6 P0: Kaufpreisaufteilung als echter Vorgang (ergänzt §18)
+
+Nicht nur `LAND = 200.000 / BUILDING = 400.000` speichern, sondern den Vorgang:
+
+```prisma
+model PurchasePriceAllocation {
+  id                   String @id @default(cuid())
+  acquisitionId        String
+  method               AllocationMethod // BMF_2026 | CONTRACT | APPRAISAL | MANUAL
+  calculationDate      DateTime
+  sourceVersion        String?          // z. B. BMF-Arbeitshilfe Stand 03/2026
+  landValueCents       BigInt
+  buildingValueCents   BigInt
+  allocationPercentage Decimal
+  documentId           String?
+  note                 String?
+  approvedByAdvisor    Boolean @default(false)
+}
+```
+
+Damit ist später beantwortbar: „Warum haben wir 67,3 % Gebäudeanteil angesetzt?"
+
+## 82.7 P0: 15-%-Monitor — anschaffungsnahe Herstellungskosten (§ 6 Abs. 1 Nr. 1a EStG)
+
+Instandsetzungs-/Modernisierungsaufwendungen innerhalb von **drei Jahren nach Anschaffung** werden zu anschaffungsnahen Herstellungskosten, wenn sie **netto 15 % der Gebäude-Anschaffungskosten** überschreiten. Softwarefolgen:
+
+1. `InvoiceLine` braucht zwingend `netCents / vatRate / vatCents / grossCents` — auch beim Wohnungsvermieter ohne Vorsteuerabzug (Nettobetrag für die 15-%-Prüfung).
+2. Rollierender 3-Jahres-Monitor mit Frühwarnung bei 80 %/90 % der Grenze:
+
+```text
+Gebäude-AK:                   300.000 €
+15%-Grenze netto:              45.000 €
+bisher relevante Maßnahmen:    39.800 €
+aktuelle Rechnung:              8.000 €
+──────────────────────────────────────
+neuer Stand:                   47.800 €
+⚠ Grenze überschritten
+```
+
+Bei Überschreitung: Umqualifizierung in AfA-Basis über Korrektur-TaxEvents — keine stille Änderung.
+
+## 82.8 P0: § 82b EStDV als Entität, nicht als Enum
+
+`DISTRIBUTED_MAINTENANCE` in TaxTreatment ist nur ein Label. Größere Erhaltungsaufwendungen an überwiegend zu Wohnzwecken dienenden Privatgebäuden können gleichmäßig auf **zwei bis fünf Jahre** verteilt werden; bei mehreren Eigentümern müssen alle denselben Zeitraum verwenden; bei Verkauf oder Ende der Einkunftserzielung ist der Rest zu berücksichtigen.
+
+```prisma
+model DistributedExpensePlan {
+  id              String @id @default(cuid())
+  expenseId       String
+  startTaxYear    Int
+  numberOfYears   Int      // 2..5
+  originalCents   BigInt
+  annualCents     BigInt[]
+  remainingCents  BigInt
+  electedAt       DateTime
+  status          PlanStatus
+}
+```
+
+Ereignisse: `SALE`, `END_OF_RENTAL`, `TRANSFER`.
+
+## 82.9 P0: WEG-Abrechnung für vermietende Eigentümer (präzisiert §65)
+
+Scope-Präzisierung: **WEG-Verwaltung** (Beschlussbuch, Eigentümerversammlung, WEG-ERP) bleibt aus V1 ausgeschlossen. Die **WEG-Abrechnung aus Sicht eines vermietenden Wohnungseigentümers** ist dagegen Pflicht für die Zielgruppe:
+
+```text
+Hausgeldabrechnung
+    ├─ umlagefähige Kosten
+    ├─ nicht umlagefähige Verwaltungskosten
+    ├─ Erhaltungsaufwendungen
+    ├─ Zuführung Erhaltungsrücklage
+    └─ Entnahme/Verbrauch Erhaltungsrücklage
+```
+
+Steuerlich heikel ist die Erhaltungsrücklage (BFH 2025): Die **Einzahlung** in die Rücklage ist noch **kein** Werbungskostenabzug; erst die **tatsächliche Verausgabung durch die WEG** für Erhaltungsmaßnahmen führt zum Abzug. Dafür genügt ein kleines `WEGAnnualStatement` mit Import/Erfassung der Eigentümerabrechnung — verzahnt mit Betriebskostenabrechnung (umlagefähige Anteile) und TaxEvents.
+
+## 82.10 P0: TaxSubject und Eigentümeraufteilung (§ 180 AO)
+
+Ownership (§8) ist ein guter Anfang, reicht aber nicht: Bei Anteilsänderungen (Schenkung, Zukauf) und getrennter Finanzierung können AfA-Basis, Finanzierungsaufwand und Sonderwerbungskosten **je Eigentümer** unterschiedlich sein. Mehrere Beteiligte führen grundsätzlich zur gesonderten und einheitlichen Feststellung nach § 180 AO.
+
+Ergänzt werden: `TaxSubject`, `TaxOwnershipInterest`, `OwnerTaxAllocation`, `SpecialAdvertisingExpense`. AfA hängt langfristig nicht ausschließlich an Property:
+
+```text
+Property → OwnershipInterest → TaxAssetShare → AfA
+```
+
+Zielbild im Report:
+
+```text
+Gesamtergebnis Haus:      -12.480 €
+davon Eigentümer A 50 %:   -6.240 €
+davon Eigentümer B 50 %:   -6.240 €
+Sonder-WK Eigentümer A:    -1.170 €
+```
+
+## 82.11 P0: UnitUsePeriod — Nutzungsart und Leerstand (ergänzt §7)
+
+Eine Einheit ist steuerlich nicht einfach „vorhanden". Zeitabhängige Nutzungsarten:
+
+```text
+RENTED_RESIDENTIAL
+RENTED_COMMERCIAL
+VACANT_FOR_RENT
+OWNER_OCCUPIED
+FREE_USE
+OTHER
+```
+
+`UnitUsePeriod` (validFrom/validTo, type, evidenceDocumentIds[]). Bei Leerstand bleiben Werbungskosten abzugsfähig, wenn die ernsthafte Vermietungsabsicht fortbesteht (objektive Vermietungsbemühungen dokumentieren). Grundlage für AfA, Schuldzinsen und Gemeinkosten-Zuordnung.
+
+## 82.12 P0: Verbilligte Vermietung
+
+`RELATED_PARTY_RESIDENTIAL_RENT` löst das Problem nicht — relevant ist die Quote **tatsächliches Entgelt ÷ ortsübliche Marktmiete**: unter 50 % Aufteilung in entgeltlichen/unentgeltlichen Teil; ab 66 % gilt dauerhafte Wohnraumvermietung als voll entgeltlich; dazwischen gesonderte Prüfung/Totalüberschussprognose. Mindestens ein jährlicher Check je Einheit:
+
+```text
+Marktmiete / vereinbarte Kaltmiete / Umlagen / Quote / Quelle / Bewertungsdatum
+
+>= 66 %      OK
+50–<66 %     steuerliche Prüfung erforderlich
+< 50 %       anteilige Kürzung wahrscheinlich erforderlich
+```
+
+Keine vollautomatische Rechtsentscheidung — aber niemand darf unbemerkt in diese Falle laufen.
+
+## 82.13 P0/P1: E-Rechnung und Netto/USt/Brutto (ergänzt §14, §23)
+
+Auch der rein steuerfrei vermietende Wohnungsvermieter ist umsatzsteuerlich Unternehmer und muss seit 01.01.2025 **E-Rechnungen empfangen** können. Mietfuchs muss XRechnung/ZUGFeRD importieren und das strukturierte XML-Original **unverändert archivieren**:
+
+```text
+Document:
+  documentFormat            E_INVOICE | PDF | IMAGE
+  structuredInvoiceFormat   XRECHNUNG | ZUGFERD | OTHER
+  originalSha256
+
+InvoiceLine:
+  netCents / vatRate / vatCents / grossCents
+```
+
+Eine echte Umsatzsteuerachse (Option nach § 9 UStG, Vorsteuerberichtigung § 15a UStG bei COMMERCIAL/PARKING/GARAGE) wird entweder später richtig implementiert oder in V1 **ausdrücklich nicht unterstützt** — nichts dazwischen.
+
+## 82.14 P1: Zuschüsse und Erstattungen
+
+Ein Zuschuss kann abzugsfähigen Erhaltungsaufwand mindern, in einem anderen Veranlagungszeitraum zu Einnahmen aus V+V führen und bei § 82b den verbleibenden Verteilungsbetrag beeinflussen. Ein Modell genügt:
+
+```text
+Reimbursement / Grant → verknüpfte ExpenseAllocation / Asset → TaxTreatment
+```
+
+Deckt auch Versicherungsentschädigungen und Handwerkergutschriften ab.
+
+## 82.15 P1: DepositApplication — Kautionsverwendung (ergänzt §21)
+
+`WITHHOLDING` als Transaktion genügt nicht. Beispiel: 2.400 € Kaution → 1.000 € Rückzahlung, 900 € gegen Mietrückstand, 500 € wegen Beschädigung. `DepositApplication` verrechnet die Kaution konkret gegen `RentCharge` / `SettlementCharge` / `DamageClaim` / `OtherClaim` — die Steuerlogik folgt dann aus dem zugrunde liegenden Sachverhalt.
+
+## 82.16 P1: LoanUseAllocation — Mittelverwendung (ergänzt §20)
+
+Für die Abzugsfähigkeit von Schuldzinsen (§ 9 EStG) zählt der wirtschaftliche Zusammenhang bzw. die tatsächliche Mittelverwendung, nicht die Bezeichnung „Darlehen Haus A":
+
+```text
+LoanUseAllocation: loanId, amountCents, purpose,
+  propertyId, unitId?, acquisitionId?, expenseId?, privateShare?
+```
+
+Verhindert Probleme bei Umschuldung, gemischter Nutzung und Miteigentum.
+
+## 82.17 P1: PropertyDisposal — Verkauf steuerlich abschließen
+
+Keine vollständige § 23-Berechnung, aber ein `PropertyDisposal`-Vorgang: Zehnjahresfrist-Hinweis (§ 23 EStG), AfA-Ende, Restwert-Dokumentation, Behandlung von § 82b-Restbeträgen, Darlehens-Ende/-Fortführung, Ownership-Ende. Das ist Domänenlogik, keine Steuerberater-Kür.
+
+## 82.18 P1: ExpenseRecord — sonstige Vermieterkosten (ergänzt §14)
+
+Nicht jede Werbungskostenposition beginnt mit einer Lieferantenrechnung (Fahrten, Porto, Telefonanteile, Software, Kontoführung, Inserate, Barauslagen, Fachliteratur). Neben `VendorInvoice` wird ein einfacher `ExpenseRecord` mit Beleg-/Nachweislink zugelassen — sonst zwingt das Modell zu künstlichen Rechnungen.
+
+## 82.19 Steuerpaket je Steuerjahr
+
+| Ausgabe | Inhalt |
+|---|---|
+| Anlage-V-Vorschau | Werte je Objekt und Kategorie |
+| Einnahmennachweis | nur steuerliche Zuflüsse |
+| Werbungskosten | nur steuerliche Abflüsse + Sonderregeln |
+| AfA-Verzeichnis | Basis, Methode, Restwert, Sonder-AfA |
+| 15-%-Monitor | 3-Jahres-Zeitraum und relevante Maßnahmen |
+| §82b-Verzeichnis | offene Verteilungsbeträge |
+| Darlehensübersicht | Zins / Tilgung / Mittelverwendung |
+| Eigentümeraufteilung | je TaxSubject |
+| WEG-Steuerblatt | Hausgeld, Rücklage, tatsächliche Entnahmen |
+| Belegindex | Beleg → Zahlung → Kategorie → Steuerwert |
+| Prüfliste | ungeklärte steuerliche Sachverhalte |
+
+Produktziel: Am Jahresende nicht „400 PDFs und Kontoauszüge, viel Spaß", sondern „hier ist die steuerlich abgegrenzte Objektakte; diese sechs Sachverhalte brauchen noch Ihre Entscheidung."
+
+## 82.20 Priorisierung der steuerlichen Ergänzungen
+
+```text
+ 1. TaxEvent + Zufluss/Abfluss + 10-Tage-Regel + Teilzahlungen
+ 2. AcquisitionCostItem + belastbare Kaufpreisaufteilung
+ 3. AfA-Engine (3/2/2,5 %, 5 % degressiv, parallele §7b-Sonder-AfA, Bestandsübernahme)
+ 4. 15-%-Monitor für anschaffungsnahe Herstellungskosten
+ 5. §82b-Verteilungsplan
+ 6. TaxSubject / Eigentümeraufteilung
+ 7. UnitUsePeriod + Leerstand/Selbstnutzung + verbilligte Vermietung
+ 8. WEG-Abrechnungsimport einschließlich Erhaltungsrücklage
+ 9. E-Rechnung + Netto/USt/Brutto
+10. Zuschüsse, Erstattungen, Kautionsverwendung und Verkauf
+```
+
+## 82.21 Auswirkungen auf bestehende Kapitel
+
+- **§3**: Invariante 21 (`JournalEntry ≠ TaxEvent`) ergänzt.
+- **§14/§15**: InvoiceLine um Netto/USt/Brutto; `ExpenseRecord` als Beleg ohne Lieferantenrechnung.
+- **§18**: `incidentalCostsCents` → `AcquisitionCostItem`; `AcquisitionAllocation` → `PurchasePriceAllocation`-Vorgang.
+- **§19**: `method` → `DepreciationPlan[]` mit gesetzlichen Methoden und Bestandsübernahme.
+- **§20**: `LoanUseAllocation` ergänzt.
+- **§21**: `DepositApplication` ergänzt.
+- **§23**: Document um E-Rechnungs-Felder ergänzt.
+- **§61**: Der Steuerreport wird ausschließlich aus TaxEvents erzeugt, nie direkt aus dem Journal.
+- **§63/§64**: Neue Phase 10 „Steuerliche Ebene (Tax Layer)" mit eigenen PR-Schnitten.
+- **§65**: Präzisierung — WEG-*Verwaltung* bleibt ausgeschlossen, die WEG-*Eigentümerabrechnung* ist V1-Pflicht.
+- **§79**: Die dortigen offenen Punkte werden teilweise zu Kernanforderungen hochgestuft (AfA-Regeln, anschaffungsnahe HK, § 82b, verbilligte Vermietung); Tax Recognition, WEG, TaxSubject und Nutzungsarten kommen als eigenständige Kernanforderungen hinzu.
 
