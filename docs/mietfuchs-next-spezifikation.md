@@ -3765,3 +3765,651 @@ Produktziel: Am Jahresende nicht „400 PDFs und Kontoauszüge, viel Spaß", son
 - **§65**: Präzisierung — WEG-*Verwaltung* bleibt ausgeschlossen, die WEG-*Eigentümerabrechnung* ist V1-Pflicht.
 - **§79**: Die dortigen offenen Punkte werden teilweise zu Kernanforderungen hochgestuft (AfA-Regeln, anschaffungsnahe HK, § 82b, verbilligte Vermietung); Tax Recognition, WEG, TaxSubject und Nutzungsarten kommen als eigenständige Kernanforderungen hinzu.
 
+---
+
+> **Editorischer Hinweis:** Die folgenden Kapitel 142–187 (Invarianten 41–60) übernehmen die Nummerierung der externen Addendum-Serie. Die Nummernbereiche 83–141 bzw. Invarianten 22–40 sind für das ausführliche Steuer-Addendum reserviert, dessen Kernaussagen derzeit in §82 zusammengefasst sind.
+
+# 142. Addendum – Ergänzungen Accounting Layer
+
+## 142.1 Ziel
+
+Die bestehende Accounting-Architektur bleibt grundsätzlich erhalten. Mietfuchs verwendet intern doppelte Buchführung als Integritäts-, Bestands- und Nachvollziehbarkeitsmechanismus, ohne dem privaten Vermieter eine klassische Buchhaltungsoberfläche aufzuzwingen.
+
+Das bestehende Grundmodell bleibt bestehen:
+
+```text
+Source Document → AccountingEvent → JournalEntry → JournalLine
+```
+
+Die Accounting-Schicht wird ergänzt um:
+
+1. persistierte Accounting-Dimensionen auf JournalLine
+2. Party als optionale Gegenparteidimension
+3. Loan als optionale Finanzierungsdimension
+4. AccountingPeriod mit Periodensperre
+5. explizite Posting Rules für neue Fachvorgänge
+6. verbindliche Trennung zwischen Accounting und Tax
+
+---
+
+# 143. Verbindliche Trennung Accounting und Tax
+
+Accounting und Tax sind zwei getrennte Wirkungen desselben fachlichen Vorgangs.
+
+```text
+                    Source Document
+                         │
+             ┌───────────┴───────────┐
+             ↓                       ↓
+      Accounting Effect          Tax Effect
+             ↓                       ↓
+      AccountingEvent             TaxEvent
+             ↓                       ↓
+       JournalEntry           TaxDetermination
+```
+
+Nicht zulässig: aus einem JournalEntry automatisch steuerliche Recognition ableiten — und ebenso wenig: ein TaxAssessment verändert einen JournalEntry.
+
+Accounting beantwortet: Was ist wirtschaftlich passiert? Welche Forderung/Verbindlichkeit besteht? Wie verändern sich Bank, Darlehenssaldo, Kautionsverbindlichkeit? Welche Aufwendungen und Erträge bestehen?
+
+Tax beantwortet: Wann ist der Vorgang steuerlich relevant? Wie wird er behandelt? Welchem Steuerjahr und welchem Beteiligten wird er zugerechnet? Was wurde erklärt, was festgestellt?
+
+---
+
+# 144. Neue Accounting-Invarianten
+
+Die bestehenden Invarianten werden ergänzt um:
+
+```text
+41. JournalLine carries accounting dimensions.
+42. Account answers "what"; dimensions answer "where / whom / what asset".
+43. Property must not be encoded by creating separate accounts per property.
+44. Unit must not be encoded by creating separate accounts per unit.
+45. TechnicalAsset must not be encoded by creating separate accounts per asset.
+46. Party is an accounting dimension, not an account.
+47. Loan is an accounting dimension, not the canonical accounting identity of the liability.
+48. TaxEvent never creates an AccountingEvent by itself.
+49. TaxDetermination never creates an AccountingEvent by itself.
+50. TaxPartyAllocation never creates an AccountingEvent by itself.
+51. TaxAssessmentAdjustment never creates an AccountingEvent by itself.
+52. TaxBasisDecision never creates an AccountingEvent by itself.
+53. A tax assessment must never mutate a posted JournalEntry.
+54. A closed AccountingPeriod rejects normal backdated postings.
+55. Corrections to closed periods use a controlled adjustment or reversal process.
+56. Journal dimensions are immutable after posting.
+57. Dimension totals must reconcile with the amount of the corresponding JournalEntry.
+58. Every financial Source Document may create at most one canonical AccountingEvent per posting action.
+59. Accounting posting must be idempotent.
+60. A source document must not silently create duplicate journal effects.
+```
+
+---
+
+# 145. Erweiterung JournalLine
+
+```prisma
+model JournalLine {
+  id          String @id @default(cuid())
+  entryId     String
+  accountId   String
+  debitCents  BigInt @default(0)
+  creditCents BigInt @default(0)
+  propertyId       String?
+  unitId           String?
+  technicalAssetId String?
+  partyId          String?
+  loanId           String?
+  description      String?
+}
+```
+
+Die Dimensionen beschreiben den Kontext der Buchungswirkung.
+
+---
+
+# 146. Bedeutung der Accounting-Dimensionen
+
+```text
+Account         → Was ist dies wirtschaftlich? (Mietertrag, Instandhaltung, Bank,
+                  Forderung, Verbindlichkeit, Darlehens-/Kautionsverbindlichkeit)
+Property        → Welcher Immobilie ist der Vorgang zuzuordnen?
+Unit            → Welche Einheit ist betroffen?
+TechnicalAsset  → Welche technische Anlage ist betroffen?
+Party           → Welche Gegenpartei? (Mieter, Lieferant, Bank, Darlehensgeber, …)
+Loan            → Welchem Darlehen ist die Buchungswirkung zuzuordnen?
+```
+
+---
+
+# 147. Beispiel – aufgeteilte Handwerkerrechnung
+
+```text
+Rechnung: 1.000 EUR (Haus A: 600, Haus B: 400)
+
+Soll  Instandhaltung      600   Property = Haus A
+Soll  Instandhaltung      400   Property = Haus B
+Haben Verbindlichkeit   1.000   Party = Heizungsbauer
+```
+
+Das Konto bleibt identisch. Nicht zulässig: `Instandhaltung Haus A` / `Instandhaltung Haus B` als separate Konten allein zur Objektzuordnung.
+
+---
+
+# 148. Beispiel – Rechnung für technische Anlage
+
+```text
+Wartung Gastherme EG: 250 EUR
+
+JournalLine:
+  Account        = TECHNICAL_MAINTENANCE
+  Property       = Haus A
+  Unit           = EG
+  TechnicalAsset = Gastherme EG
+  Party          = Heizungsbauer Müller
+```
+
+Damit sind unabhängig auswertbar: Aufwand nach Konto, nach Objekt, nach Einheit, Lifetime Cost der Gastherme, Aufwand nach Lieferant.
+
+---
+
+# 149. Beispiel – Mietforderung
+
+```text
+Charge: Kaltmiete 850 EUR
+
+Soll  Forderung Mieter   850
+Haben Mietertrag         850
+
+Dimensionen: Property = Haus A, Unit = EG, Party = Mieter Müller
+```
+
+---
+
+# 150. Beispiel – Mietzahlung
+
+```text
+Bank +850 EUR
+
+Soll  Bank               850
+Haben Forderung Mieter   850
+
+Dimension: Party = Mieter Müller
+```
+
+Property und Unit können aus der zugeordneten Forderung übernommen werden, sofern die Zahlung eindeutig dieser Forderung zugeordnet ist.
+
+---
+
+# 151. Beispiel – Darlehensrate
+
+```text
+Banktransaktion -1.500 EUR (Tilgung 900, Zins 600)
+
+Soll  Darlehensverbindlichkeit   900   Loan = Immobilienkredit Haus A
+Soll  Zinsaufwand                600   Property = Haus A, Loan = Immobilienkredit Haus A
+Haben Bank                     1.500
+```
+
+Tilgung bleibt Bestandsveränderung und ist kein Aufwand.
+
+---
+
+# 152. Party-Ledger
+
+Party kann optional als Accounting-Dimension verwendet werden. Ohne eigene Debitoren-/Kreditorenkonten pro Person sind damit auswertbar:
+
+```text
+offene Forderungen je Mieter
+Zahlungen je Mieter
+Verbindlichkeiten je Lieferant
+Zahlungen je Lieferant
+Kaution je Mieter
+Darlehen je Darlehensgeber
+```
+
+Die Fachidentität bleibt `Party` — nicht die DATEV-Kontonummer.
+
+---
+
+# 153. Keine steuerliche Beteiligtenverteilung im Journal
+
+Die steuerliche Verteilung eines V+V-Ergebnisses auf Beteiligte erzeugt keine Accounting-Buchung.
+
+```text
+V+V-Ergebnis 20.000 EUR, A 50 % / B 50 %
+
+Tax:  TaxPartyAllocation A = 10.000, TaxPartyAllocation B = 10.000
+
+Nicht zulässig: JournalEntry „Soll Beteiligter A / Haben V+V-Ergebnis …“
+```
+
+Die Beteiligtenzurechnung ist steuerliche Feststellungslogik, kein wirtschaftlicher Geschäftsvorfall.
+
+---
+
+# 154. Sonderwerbungskosten eines Beteiligten
+
+Individuell zurechenbare Sonderwerbungskosten werden nicht allein wegen ihrer steuerlichen Zurechnung im gemeinsamen Objektjournal umgebucht.
+
+```text
+A trägt persönlich 2.500 EUR Schuldzinsen
+
+Tax: TaxEvent (allocationMode = DIRECT_TO_PARTY, partyId = A, amount = -2.500)
+```
+
+Ob zusätzlich ein AccountingEvent entsteht, hängt davon ab, ob der zugrunde liegende finanzielle Vorgang tatsächlich im von Mietfuchs verwalteten Finanzbereich erfasst wird. Die steuerliche Zurechnung allein erzeugt keine Buchung.
+
+---
+
+# 155. Feststellungsbescheid und Accounting
+
+Ein Feststellungsbescheid verändert das Accounting nicht rückwirkend.
+
+```text
+Mietfuchs-AfA: 6.000 EUR · steuerlich anerkannt: 5.600 EUR
+
+Accounting: unverändert
+Tax:        TaxAssessmentAdjustment +400 EUR
+            ggf. TaxBasisDecision: neue AfA-Basis für Folgejahre
+```
+
+Kein vorhandener JournalEntry wird verändert.
+
+---
+
+# 156. AccountingPeriod
+
+```prisma
+model AccountingPeriod {
+  id          String @id @default(cuid())
+  workspaceId String
+  year        Int
+  month       Int?
+  status      AccountingPeriodStatus // OPEN | CLOSED
+  closedAt    DateTime?
+  closedBy    String?
+  note        String?
+
+  @@unique([workspaceId, year, month])
+}
+```
+
+---
+
+# 157. Periodenmodell für private Vermieter
+
+Keine komplexe handelsrechtliche Abschlussperiodenlogik. Unterstützt: **Jahresperiode** (Default für kleine private Vermieter) oder optional Monatsperioden. Beispiel: `2025 CLOSED · 2026 OPEN`.
+
+---
+
+# 158. Periodensperre
+
+Für eine geschlossene AccountingPeriod gilt: normales Posting mit PostingDate innerhalb der Periode → **REJECT**. Nicht mehr zulässig: Betrag, Konto, Dimension, PostingDate, Source oder JournalLines ändern.
+
+---
+
+# 159. Korrektur geschlossener Perioden
+
+```text
+Original Entry → Reversal / Adjustment → Corrected Entry
+```
+
+Der ursprüngliche Vorgang bleibt unverändert. Gehört eine Korrektur wirtschaftlich in eine geschlossene Vorperiode, dokumentiert das System explizit: Original period, Correction period, Reason, Referenz auf Original. Keine stille Rückdatierung.
+
+---
+
+# 160. JournalEntry-Erweiterung
+
+```prisma
+model JournalEntry {
+  id           String @id @default(cuid())
+  workspaceId  String
+  eventId      String @unique
+  postingDate  DateTime
+  periodId     String?
+  status       JournalStatus
+  reversalOfId String?
+  createdAt    DateTime @default(now())
+  postedAt     DateTime?
+}
+```
+
+`periodId` wird aus `postingDate` bestimmt bzw. validiert.
+
+---
+
+# 161. Idempotentes Posting
+
+Jeder fachliche Posting-Vorgang muss idempotent sein. Wird `VendorInvoice ABC` durch einen Netzwerkfehler zweimal gepostet, entstehen **1 AccountingEvent und 1 JournalEntry** — nicht zwei. `sourceType + sourceId + eventType` bilden eine eindeutige fachliche Posting-Identität.
+
+---
+
+# 162. AccountingEvent-Erweiterung
+
+```prisma
+model AccountingEvent {
+  id          String @id @default(cuid())
+  workspaceId String
+  type        AccountingEventType
+  sourceType  String
+  sourceId    String
+  postingKey  String
+  occurredAt  DateTime
+  postedAt    DateTime?
+
+  @@unique([workspaceId, postingKey])
+}
+```
+
+Beispiele: `VENDOR_INVOICE:invoice_123:INITIAL_POSTING`, `VENDOR_INVOICE:invoice_123:REVERSAL:1`.
+
+---
+
+# 163. Posting Rules
+
+Finanzielle Fachobjekte erzeugen ihre Accounting-Wirkung ausschließlich über definierte Posting Rules. Keine UI darf freie JournalLines für normale Geschäftsprozesse erzeugen.
+
+```text
+Source Document → Posting Rule → AccountingEvent → JournalEntry
+```
+
+---
+
+# 164. Posting Rules – bestehende Vorgänge
+
+```text
+RENT_CHARGE · RENT_PAYMENT · OPERATING_COST_CHARGE · OPERATING_COST_SETTLEMENT
+VENDOR_INVOICE · VENDOR_PAYMENT · DEPOSIT_RECEIPT · DEPOSIT_REFUND
+LOAN_DISBURSEMENT · LOAN_PAYMENT · ASSET_ACQUISITION · DEPRECIATION
+REVERSAL · ADJUSTMENT
+```
+
+---
+
+# 165. Posting Rules – neue Fachobjekte
+
+Die neuen Fachobjekte aus dem Steuer-/V+V-Addendum werden in zwei Gruppen getrennt (§166, §167).
+
+---
+
+# 166. Neue Fachobjekte mit Accounting-Wirkung
+
+```text
+AcquisitionCostItem · ExpenseRecord · Reimbursement · Grant receipt
+DepositApplication · PropertyDisposal · WEG payment · Asset disposal
+Loan-related cash transaction
+```
+
+Die konkrete Posting Rule hängt vom Fachvorgang ab.
+
+---
+
+# 167. Neue Fachobjekte ohne eigene Accounting-Wirkung
+
+Folgende Objekte erzeugen niemals allein einen AccountingEvent:
+
+```text
+TaxEvent · TaxEntity · TaxParticipation · TaxDetermination
+TaxDeterminationSnapshot · TaxDeterminationItem · TaxPartyAllocation
+TaxAssessmentAdjustment · TaxBasisDecision · TaxReviewItem
+RentAdequacyAssessment · LoanUseAllocation
+```
+
+Sie beschreiben steuerliche Recognition, Zurechnung, Bewertung, Entscheidung und Dokumentation — keinen eigenständigen wirtschaftlichen Geschäftsvorfall.
+
+---
+
+# 168. Reimbursement / Grant
+
+```text
+Förderzuschuss 5.000 EUR, Bank +5.000
+
+Soll  Bank                     5.000
+Haben Zuschuss / Erstattung    5.000
+```
+
+Tax ist ein separater Vorgang: Je steuerlicher Behandlung kann der Zuschuss steuerliche Einnahme sein, AK/HK beeinflussen oder steuerlichen Aufwand mindern. Die Accounting-Buchung entscheidet darüber nicht.
+
+---
+
+# 169. DepositApplication
+
+```text
+Kaution 2.400 EUR: 900 gegen Mietrückstand verrechnet, 1.500 zurückgezahlt
+
+Verrechnung:  Soll Kautionsverbindlichkeit    900 · Haben Forderung Mieter   900
+Rückzahlung:  Soll Kautionsverbindlichkeit  1.500 · Haben Bank             1.500
+```
+
+Die Kaution wird nicht als Mietertrag behandelt.
+
+---
+
+# 170. ExpenseRecord
+
+Ein ExpenseRecord erzeugt einen AccountingEvent, wenn der finanzielle Vorgang innerhalb Mietfuchs vollständig erfasst wird:
+
+```text
+Porto 8,50 EUR vom verwalteten Bankkonto:
+Soll sonstiger Aufwand 8,50 · Haben Bank 8,50
+```
+
+Extern bezahlte individuelle Sonderwerbungskosten eines Beteiligten werden dagegen ausschließlich steuerlich erfasst (`TaxEvent`, `DIRECT_TO_PARTY`). Das System muss beide Fälle unterscheiden.
+
+---
+
+# 171. WEG
+
+Die WEG-Jahresabrechnung erzeugt nicht automatisch eine neue Zahlung. Zu unterscheiden: tatsächliche Hausgeldzahlung (Accounting) vs. Jahresabrechnungs-Klassifikation (fachlich/steuerlich). Die spätere Aufteilung in umlagefähige Betriebskosten, Verwaltungskosten, Erhaltungsrücklage und Erhaltungsaufwand darf nicht automatisch eine zweite Bank-/Aufwandsbuchung erzeugen. Doppelerfassung ist durch Invariantentests zu verhindern.
+
+---
+
+# 172. PropertyDisposal
+
+Ein Verkauf/Abgang kann mehrere Accounting-Wirkungen auslösen (Kaufpreiszahlung, Asset-Ausbuchung, Darlehensablösung, Verkaufsnebenkosten). Die einzelnen Vorgänge bleiben getrennte Source Documents bzw. AccountingEvents. PropertyDisposal darf nicht pauschal eine einzige unstrukturierte Journalbuchung erzeugen.
+
+---
+
+# 173. Dimensionen bei Bankbuchungen
+
+Nicht jede Bank-JournalLine benötigt sämtliche Dimensionen:
+
+```text
+Soll  Bank 850                      (optional ohne Property-Dimension)
+Haben Forderung Mieter 850          (Property, Unit, Party)
+```
+
+Reporting muss sowohl JournalEntry-level context als auch JournalLine-level dimensions korrekt berücksichtigen.
+
+---
+
+# 174. Dimension Completeness Rules
+
+Je AccountType oder PostingRule können Mindestdimensionen definiert werden:
+
+```text
+Mietertrag:               Property erforderlich · Unit normalerweise erforderlich · Party empfohlen
+Gebäudeinstandhaltung:    Property erforderlich · Unit optional · TechnicalAsset optional
+Mieterforderung:          Party + Property + Unit erforderlich
+Darlehensverbindlichkeit: Loan erforderlich
+Kautionsverbindlichkeit:  Party erforderlich · Lease-Kontext über Source erforderlich
+```
+
+---
+
+# 175. DimensionRule
+
+```prisma
+model DimensionRule {
+  id          String @id @default(cuid())
+  accountId   String?
+  eventType   AccountingEventType?
+  propertyRequired       Boolean @default(false)
+  unitRequired           Boolean @default(false)
+  technicalAssetRequired Boolean @default(false)
+  partyRequired          Boolean @default(false)
+  loanRequired           Boolean @default(false)
+}
+```
+
+Fehlende Pflichtdimension → Posting rejected. Kein stilles Weglassen.
+
+---
+
+# 176. Reporting aus Accounting
+
+Accounting Reports funktionieren unabhängig von Tax: Property → FinancialCategory/Account, Unit → Kosten, TechnicalAsset → Kosten, Party → Forderungen/Verbindlichkeiten, Loan → Saldo/Tilgung/Zinsen, Bank → Cashflow. Tax Reports verwenden dagegen TaxEvent, TaxDetermination, TaxPartyAllocation, TaxBasisDecision.
+
+---
+
+# 177. DATEV Export
+
+DATEV bleibt Adapter. Der Export kann JournalEntry/JournalLine, AccountMapping und die Dimensionen (Property, Unit, TechnicalAsset, Party, Loan) verwenden — je Konfiguration z. B. als Kostenstelle, Belegfeld oder Zusatzinformation. Die interne Domänenlogik darf nicht vom konkreten Exportformat abhängen.
+
+---
+
+# 178. Kein Debitoren-/Kreditorenzwang
+
+Mietfuchs führt nicht für jeden Mieter/Lieferanten ein eigenes DATEV-Sachkonto als kanonische Identität. Intern gilt `Party` als fachliche Identität; DATEV-spezifische Debitoren-/Kreditorenlogik kann später über AccountMapping/ExportMapping ergänzt werden.
+
+---
+
+# 179. Keine freie Journalbuchung im Standard-UI
+
+Der private Vermieter arbeitet mit Fachvorgängen (Rechnung erfassen, Zahlung zuordnen, Miete verbuchen, Kaution erhalten, Darlehensrate aufteilen, Aufwand erfassen, Zuschuss erfassen) — nicht mit Soll-/Haben-Eingabe. Eine freie Journalbuchung ist höchstens als ADMIN/EXPERT MODE für kontrollierte Sonderfälle vorgesehen, kein normaler Workflow.
+
+---
+
+# 180. Testfälle Accounting Dimensions
+
+```text
+T200 Property Split:     1.000 EUR Rechnung → Lines 600 (Property A) + 400 (Property B);
+                         Summe der Dimensionsbeträge = 1.000
+T201 Unit Dimension:     Reparatur 300 EUR → BUILDING_MAINTENANCE, Haus A, EG
+T202 TechnicalAsset:     Wartung Gastherme EG 250 EUR → Asset-Dimension gesetzt,
+                         Lifetime-Cost-Report +250
+T203 Party Dimension:    Mieter-Charge 850 EUR → Forderungszeile mit Party = Mieter
+T204 Loan Dimension:     Rate 900/600 → Tilgungszeile mit Loan; Zinszeile mit Loan + Property
+```
+
+---
+
+# 181. Testfälle Period Lock
+
+```text
+T210 Closed Period:  2025 CLOSED · Posting mit postingDate 2025-12-20 → reject
+T211 Reversal:       Original bleibt unverändert · Reversal referenziert Original ·
+                     korrigierter Entry ist separat
+```
+
+---
+
+# 182. Testfälle Tax vs. Accounting
+
+```text
+T220 TaxAssessmentAdjustment:  erklärt 6.000 / festgestellt 5.600
+                               → Adjustment +400 · geänderte JournalEntries = 0
+T221 TaxPartyAllocation:       20.000 auf A/B je 50 %
+                               → Allocations 10.000/10.000 · AccountingEvents = 0
+T222 TaxBasisDecision:         Basis erklärt 300.000 / festgestellt 292.000
+                               → künftige Forecast-Basis 292.000 · Journal-Mutation = 0
+```
+
+---
+
+# 183. Testfälle Idempotenz
+
+```text
+T230 Double Posting Request:  VendorInvoice.post() zweimal → 1 AccountingEvent, 1 JournalEntry
+T231 Bank Matching Retry:     gleiche Banktransaktion zweimal demselben Payment zugeordnet
+                              → 1 Payment, 1 Accounting-Wirkung, kein Doppel-Posting
+```
+
+---
+
+# 184. Testfall WEG ohne Doppelbuchung
+
+```text
+12 × 300 EUR Hausgeld → 3.600 EUR Cash-Abfluss (Accounting)
+
+Jahresabrechnung klassifiziert später:
+  Betriebskosten 2.000 · Verwaltung 500 · Rücklagen-Zuführung 1.100
+
+Expected: zusätzlicher Bank-Abfluss aus der Klassifikation = 0 EUR
+```
+
+Die Jahresabrechnung klassifiziert bestehende Vorgänge und erzeugt nicht nochmals 3.600 EUR Aufwand/Zahlung.
+
+---
+
+# 185. Definition of Done – Accounting Layer
+
+- JournalLine unterstützt Property-, Unit-, TechnicalAsset-, Party- und Loan-Dimension.
+- Dimensionsregeln sind validierbar; Dimensionen sind nach Posting unveränderlich.
+- AccountingPeriod existiert; geschlossene Perioden blockieren normale Rückbuchungen.
+- Reversal/Adjustment funktioniert; Posting ist idempotent; keine doppelten JournalEntries je Source Posting.
+- Alle wesentlichen finanziellen Fachobjekte besitzen definierte Posting Rules.
+- TaxEvent, TaxDetermination, TaxPartyAllocation, TaxAssessmentAdjustment und TaxBasisDecision erzeugen niemals allein Accounting.
+- Feststellungsbescheide verändern kein historisches Journal.
+- WEG-Jahresabrechnung erzeugt keine Doppelbuchung bereits geleisteter Hausgelder.
+- Beteiligtenverteilung bleibt ausschließlich in der Tax-Schicht.
+- DATEV bleibt Export-/Mappingadapter.
+- Der Standardnutzer muss keine Soll-/Haben-Buchungen erfassen.
+
+---
+
+# 186. Aktualisierte Gesamtarchitektur
+
+```text
+                              DOMAIN
+                                │
+      ┌─────────────────────────┼─────────────────────────┐
+      │                         │                         │
+      ↓                         ↓                         ↓
+ Lease / Charge          VendorInvoice              Loan / Asset
+ Payment / Deposit       ExpenseRecord              Reimbursement
+ BankTransaction         WEG / Disposal             Acquisition
+      │                         │                         │
+      └─────────────────────────┼─────────────────────────┘
+                                │
+                     Source Documents
+                                │
+              ┌─────────────────┴─────────────────┐
+              │                                   │
+              ↓                                   ↓
+        ACCOUNTING                             TAX
+              │                                   │
+        Posting Rules                       Recognition Rules
+              │                                   │
+              ↓                                   ↓
+      AccountingEvent                         TaxEvent
+              │                                   │
+              ↓                                   ↓
+       JournalEntry                      TaxDetermination
+              │                                   │
+              ↓                         ┌─────────┼─────────┐
+        JournalLine                     ↓         ↓         ↓
+              │                      Forecast  Declared  Assessed
+              │                                   │
+     ┌────────┼─────────┐                         ↓
+     ↓        ↓         ↓                  Assessment Delta
+  Account  Dimensions  Period                      │
+     │        │                                     ↓
+     │   Property / Unit                    TaxBasisDecision
+     │   Asset / Party                             │
+     │   Loan                                      ↓
+     │                                      Future Tax Forecast
+     ↓
+Financial Reports
+Bank / Open Items
+DATEV Export
+```
+
+---
+
+# 187. Fachliche Leitentscheidung
+
+Die Accounting-Schicht dient der wirtschaftlichen Integrität und Nachvollziehbarkeit. Die Tax-Schicht dient der steuerlichen Behandlung von Vermietung und Verpachtung. Beide Schichten betrachten dieselben realen Vorgänge, beantworten aber unterschiedliche Fragen.
+
+> Accounting beschreibt, was wirtschaftlich passiert ist. Tax beschreibt, wie dieser Vorgang für Vermietung und Verpachtung steuerlich zu behandeln ist. Keine der beiden Schichten darf stillschweigend die andere ersetzen oder rückwirkend verändern.
+
