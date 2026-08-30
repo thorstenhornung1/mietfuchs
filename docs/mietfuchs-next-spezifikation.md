@@ -5415,3 +5415,239 @@ Die zentrale Produktvision:
 
 > **Mietfuchs ist der digitale Arbeitsplatz für private Vermieter: Mietvertrag, Geld, Betriebskosten, Technik, Steuer, Dokumente und tägliche Verwaltungsarbeit in einem fachlich sauberen, lokalen bzw. self-hosted System — ohne ERP-Ballast und ohne Cloudzwang.**
 
+---
+
+# 271. Addendum: Datenbank-, Persistenz- und Upstream-Strategie
+
+**Stand:** 30.08.2026 · Status: Architekturentscheidung. Ziel: robuster PostgreSQL-Betrieb für Homelab/Server/Cluster **und** die für den ursprünglichen Mietfuchs wichtige einfache lokale Installation — mit der Möglichkeit, geeignete Änderungen nach Upstream zurückzuführen. (Abschnitte 1–30 des Original-Addendums = §271.1–§271.30.)
+
+## 271.1 Leitentscheidung
+
+Mietfuchs unterstützt langfristig genau **zwei** produktive relationale Persistenzmodi:
+
+```text
+Local Mode                          → SQLite
+Server / Homelab / Multiuser Mode  → PostgreSQL
+```
+
+JSON bleibt erhalten als Legacy-Importformat, vollständiges Exportformat, Backup-/Portabilitätsformat auf Domänenebene und Test-Fixture-Format — aber **nicht** als reguläres produktives Datenbank-Backend. Weitere Datenbankserver (MySQL, MariaDB, SQL Server, MongoDB, CockroachDB) gehören nicht zum unterstützten Produktumfang.
+
+## 271.2 Begründung
+
+Zwei legitime Betriebsmodelle der Zielgruppe (1–12 Einheiten):
+
+```text
+Local Mode:   Browser → Mietfuchs → mietfuchs.db
+              (kein DB-Server, kein DB-Konto, keine Portfreigabe, keine Container)
+Server Mode:  Browser → Reverse Proxy → Mietfuchs App/Worker → PostgreSQL
+              (Docker, NAS, VM, K3s/Kubernetes, HA, Ceph-Cluster, mehrere Instanzen)
+```
+
+## 271.3 Unterstützte Backends
+
+**SQLite** — Default für lokale Einzelplatzinstallation, Desktop-/Single-Server-Betrieb, kleine Docker-Installationen mit lokalem Volume, Test/Demo, einfache Upstream-Distribution. Konfiguration: `DATABASE_URL=file:/data/mietfuchs.db` (Erkennung am Connection String). **Ausdrücklich nicht freigegeben** für CephFS/NFS/SMB als DB-Volume, mehrere App-Nodes auf derselben Datei, Kubernetes ReadWriteMany, aktiven Multi-Node-Betrieb — dafür PostgreSQL. Grundsatz: SQLite = lokale eingebettete Datenbank, SQLite ≠ verteilte Datenbank.
+
+**PostgreSQL** — Referenzdatenbank für Docker-Compose-Server, NAS/Homelab, Proxmox, K3s/Kubernetes, Ceph/Cluster, Multiuser, mehrere App-/Worker-Prozesse, OIDC-Betrieb, größere Bestände, Monitoring, fortgeschrittene Integrität. `DATABASE_URL=postgresql://mietfuchs:…@postgres:5432/mietfuchs`. Referenzinstallation: `mietfuchs` + `postgres`; optional später `mietfuchs-web` + `mietfuchs-worker` + `postgres`.
+
+**JSON** — erlaubte Rollen: Legacy-Import (`db.json → LegacyJsonValidator → MigrationMapper → Domain → SQLite/PostgreSQL`), vollständiger versionierter Domain-Export (`mietfuchs-export/` mit manifest.json, workspace.json, parties.json, …, documents/), Test-Fixtures. **Nicht zulässig:** nach abgeschlossener Migration relationale DB und db.json als zwei konkurrierende Wahrheiten.
+
+## 271.4 Warum JSON kein produktives Backend bleibt
+
+Mietfuchs Next benötigt referentielle Integrität, atomare Transaktionen, eindeutige Constraints, idempotentes Posting, konkurrierende Hintergrundjobs, sichere Bankimporte, unveränderliche Journalbuchungen, PaymentAllocations, Eigentumszeiträume, historisierte Verträge, Migrationen, Auditierbarkeit. Diese Eigenschaften werden nicht als eigene Datenbanklogik in TypeScript nachgebaut: **Repository-Abstraktion ≠ eigene Datenbank entwickeln.**
+
+## 271.5 Keine weiteren offiziellen Datenbanken
+
+V1 ausschließlich SQLite + PostgreSQL. Nicht offiziell unterstützt: MySQL, MariaDB, SQL Server, CockroachDB, MongoDB, D1, Turso, libSQL Remote — auch wenn ORM/Treiber sie technisch könnten. Jedes Backend erzeugt dauerhaften Aufwand (Schema, Migrationen, Datentypen, Constraints, Transaktionssemantik, Testmatrix, Backup/Restore, Upgrades, Fehleranalyse, Doku): **zusätzliche Datenbankunterstützung braucht nachgewiesenen Nutzerbedarf, nicht nur technische Machbarkeit.**
+
+## 271.6 Architektur: Domain unabhängig von Datenbank
+
+```text
+HTTP/UI → Application Services → Domain → Repository Interfaces
+→ Persistence Adapter ├── SQLite └── PostgreSQL
+```
+
+```typescript
+export interface LeaseRepository {
+  getById(workspaceId: string, leaseId: string): Promise<Lease | null>;
+  save(lease: Lease): Promise<void>;
+}
+```
+
+Die Domain importiert niemals `@prisma/client`, `pg`, `better-sqlite3` oder `node:sqlite`.
+
+## 271.7 Datenbankfähigkeiten statt Lowest Common Denominator
+
+**Portable Core** (auf beiden Backends identisch): Tabellen/Relationen, Foreign Keys, Unique Constraints, Transaktionen, Integer-Cent, DATE-/TIMESTAMP-Felder, Repository-Semantik, Settlement, Charges, Payments, TaxEvent, Accounting, Operational Core.
+
+**PostgreSQL Enhancements** (zusätzlich erlaubt): Row Level Security, partielle Indizes, fortgeschrittene CHECK-/Exclusion-Constraints, JSONB-Indizes, Views, Advisory Locks, Background-Job-Optimierungen — für Sicherheit/Performance, aber die fachliche Korrektheit darf bei SQLite-supported gekennzeichnetem Funktionsumfang nicht ausschließlich davon abhängen.
+
+## 271.8 Capability-Modell
+
+```typescript
+interface DatabaseCapabilities {
+  dialect: "sqlite" | "postgresql";
+  supportsRowLevelSecurity: boolean;
+  supportsExclusionConstraints: boolean;
+  supportsAdvisoryLocks: boolean;
+  supportsConcurrentWorkers: boolean;
+  supportsNativeJsonIndexing: boolean;
+}
+```
+
+Dient ausschließlich Infrastrukturentscheidungen. Unzulässig im Fachcode: `if (postgres) { calculateRentDifferently(); }`.
+
+## 271.9 Migrationsstrategie
+
+SQLite und PostgreSQL besitzen dieselbe logische `schemaVersion`. Jede Schemaänderung braucht: SQLite-Migration, PostgreSQL-Migration, Migrationstest, Fresh-Install-Test, Upgrade-Test. Migrationen verwerfen niemals still Daten.
+
+## 271.10 ORM-Entscheidung
+
+Prisma bleibt zunächst zulässig (unterstützt beide Dialekte), reicht aber nicht bis in die Domain: **Prisma = Persistenzwerkzeug, Prisma ≠ Domain Model.** Repository-Interfaces kapseln Prisma vollständig; ein späterer Wechsel auf ein SQL-näheres Werkzeug darf die Domain nicht berühren. Keine Prisma-Typen in `packages/domain`, Settlement Engine, Tax Engine, Accounting Engine, Workflow Engine, API Contracts.
+
+## 271.11 Zeit- und Datentypen
+
+Rechtliche/wirtschaftliche Kalendertage als **DATE** (lease.validFrom/validTo, invoiceDate, dueDate, servicePeriod, settlementPeriod, taxRecognitionDate); technische Zeitpunkte als **Timestamp** (createdAt, updatedAt, approvedAt, sentAt, importedAt, postedAt). Invariante 102: Civil/legal date ≠ timestamp — auf beiden Backends identisch dargestellt.
+
+## 271.12 SQLite-Betriebsregeln
+
+Beim Start: DB-Datei erreichbar, Verzeichnis schreibbar, Schema-Version, Foreign Keys aktiviert (`PRAGMA foreign_keys = ON`), Integritätsprüfung. WAL für lokale geeignete Storage erlaubt. Ausdrücklich dokumentiert: **SQLite-Datei nicht auf NFS/SMB/CephFS betreiben** — Admin-Cockpit warnt bei erkennbaren Netzwerk-Dateisystemen (ohne Garantie automatischer Erkennung).
+
+## 271.13 PostgreSQL-Betriebsregeln
+
+Mehrere App-/Worker-Prozesse, Connection Pooling, serverseitige Backups, Cluster/HA, optionale RLS-Isolation. PostgreSQL ist das Backend mit der umfangreichsten Integritäts-Testsuite: Accounting-Invarianten, Workspace-Isolation, Posting-Idempotenz, Background-Job-Concurrency, Backup/Restore.
+
+## 271.14 Background Jobs
+
+Die Datenbankwahl erzwingt keinen externen Message Broker. SQLite Local Mode: Jobs im Mietfuchs-Prozess (local job runner, genau ein aktiver Worker). PostgreSQL Server Mode: PostgreSQL-basierte Queue + separate Worker. Kafka, RabbitMQ und Valkey sind keine Voraussetzung.
+
+## 271.15 Transactional Outbox
+
+```text
+BEGIN → Payment → PaymentAllocation → AccountingEvent → IntegrationOutboxEvent → COMMIT
+```
+
+Erst danach werden externe Systeme angesprochen: Domain transaction ≠ external side effect. Externe Systeme dürfen einen erfolgreich gespeicherten Fachvorgang nicht verhindern.
+
+## 271.16 Upstream-Kompatibilitätsstrategie
+
+Änderungen in drei Klassen:
+
+- **Klasse A – sehr gut upstreamfähig:** TypeScript-Verbesserungen, gemeinsame Domain-Schemas, Repository-Abstraktion, Tests, Settlement-Bugfixes, Integer-Cent-Invarianten, Migration db.json → SQLite, SQLite-Defaultbetrieb, bessere Docker-Unterstützung, Import/Export, Backup, Dokumenten-Storage-Abstraktion — möglichst klein und unabhängig halten.
+- **Klasse B – eventuell upstreamfähig:** PostgreSQL-Support, Workspaces, CAMT, erweiterte Lease-Domäne, technische Administration, Dokument-Inbox, Operational Core — modular einbauen.
+- **Klasse C – Mietfuchs-Next-spezifisch:** doppisches Journal, TaxEvent Layer, gesonderte Feststellung, AfA-/§82b-/15-%-Monitor, komplexere Server-/OIDC-Funktionen — verbleiben im Fork, ohne den portablen Kern zu verschmutzen.
+
+## 271.17 Empfohlener Upstream-Migrationspfad
+
+Keine Rückführung als ein großer „Mietfuchs Next“-PR, sondern:
+
+```text
+PR 1  Tests / Invarianten
+PR 2  TypeScript / Shared Types
+PR 3  Repository Interface (bestehendes JSON-Verhalten unverändert)
+PR 4  SQLite Adapter
+PR 5  automatische db.json → SQLite Migration
+PR 6  Backup / Export
+PR 7+ einzelne fachliche Verbesserungen
+```
+
+Upstream kann so einzelne Verbesserungen übernehmen, ohne sich für die komplette Next-Roadmap zu entscheiden.
+
+## 271.18 Übergang vom heutigen Upstream
+
+Während der frühen Foundation-Phase darf temporär ein `LegacyJsonRepository` neben `SqliteRepository`/`PostgresRepository` existieren — ausschließlich für den kontrollierten Übergang. Sobald SQLite produktionsreif, db.json-Import vollständig, Regression cent-genau, Export vollständig und Backup dokumentiert sind, wird es aus dem regulären Runtime-Pfad entfernt. Danach: JSON = Import/Export, nicht JSON = Datenbank.
+
+## 271.19 Zero-Configuration Upgrade
+
+Für bestehende Upstream-Nutzer: `data/db.json` → nach Start der neuen Version zusätzlich `data/mietfuchs.db`.
+
+```text
+1. db.json erkennen  2. keine relationale DB mit Fachinhalten vorhanden
+3. JSON vollständig validieren  4. Backup der Originaldatei
+5. neue SQLite-DB in temporärer Datei  6. Daten importieren
+7. Settlement-Regression/Integritätsprüfung  8. DB atomar aktivieren
+9. Importprotokoll speichern  10. db.json nicht automatisch löschen
+
+data/
+├── mietfuchs.db
+├── legacy/db-2026-08-30.json
+└── migration-report.json
+```
+
+Bei Fehlern bleibt die bisherige Datenbasis unverändert.
+
+## 271.20 Portable Export als Exit-Strategie
+
+Eine Datenbankdatei allein ist kein Portabilitätsmechanismus. Der datenbankunabhängige, versionierte Export (`{"format": "mietfuchs-domain-export", "version": 1, "schemaVersion": 17}`) dient dem Wechsel SQLite ↔ PostgreSQL, Neuinstallation, Archivierung, Recovery und dem Wechsel zu anderer Software.
+
+## 271.21 Backend-Wechsel
+
+Offizieller Wechsel nie per SQL-Konvertierung, sondern: `Source DB → Domain Export → Validation → Target DB`. Backend-spezifische interne Tabellen/Migrationstabellen werden so nie Teil des Portabilitätsvertrags.
+
+## 271.22 Lizenz- und Rechteprinzipien
+
+Ideen und öffentlich dokumentierte Architekturprinzipien dürfen analysiert werden; fremder Quellcode wird nur übernommen, wenn die Lizenz dies eindeutig erlaubt und kompatibel ist. Je Dependency geprüft: Lizenz, Copyright, Weitergabepflichten, Copyleft, Aktivität/Wartung, Sicherheitslage. Bevorzugt: MIT, Apache-2.0, BSD-2/3-Clause, ISC, PostgreSQL License. Kein Copy/Paste nur aufgrund öffentlicher Sichtbarkeit; keine Übernahme unklar lizenzierter Modelle, Tests oder Dokumentation.
+
+## 271.23 Externe GPL-/AGPL-Systeme
+
+Externe Systeme (z. B. Paperless-ngx) werden optional über dokumentierte APIs angebunden (REST/Webhook) — separater Prozess, separate Installation, optionale Integration. Kein Vendoring fremden GPL-/AGPL-Codes ohne gesonderte bewusste Entscheidung.
+
+## 271.24 Keine Abhängigkeit externer Systeme für Fachkorrektheit
+
+Paperless, Node-RED, n8n, Ollama, Authentik, Valkey, RabbitMQ, Kafka, Taiga dürfen niemals Voraussetzung für die fachliche Korrektheit des Kerns sein. Minimalinstallation: Local = Mietfuchs + SQLite; Server = Mietfuchs + PostgreSQL.
+
+## 271.25 CI-Testmatrix
+
+```text
+                       SQLite   PostgreSQL
+Fresh install             ✓         ✓
+Migrations                ✓         ✓
+Repository tests          ✓         ✓
+Domain tests              ✓         ✓
+Settlement regression     ✓         ✓
+Accounting core           ✓         ✓
+Tax core                  ✓         ✓
+Import/Export             ✓         ✓
+Backup/Restore            ✓         ✓
+
+PostgreSQL zusätzlich: RLS · worker concurrency · advanced constraints
+SQLite zusätzlich:     db.json migration · single-node upgrade · integrity check
+```
+
+## 271.26 Keine backend-spezifischen Golden Results
+
+Derselbe fachliche Testdatensatz führt auf SQLite und PostgreSQL zum selben fachlichen Ergebnis (tenantShare, landlordShare, outstanding, TaxEvents, Journal-Balance — identisch). Reihenfolgen ohne fachliche Bedeutung dürfen nicht als implizite DB-Reihenfolge vorausgesetzt werden; jede relevante Sortierung ist explizit.
+
+## 271.27 Neue Invarianten
+
+```text
+101. Je Installation existiert genau eine persistente fachliche Source of Truth.
+102. Civil/legal date ≠ timestamp.
+103. SQLite und PostgreSQL dürfen keine unterschiedliche Fachlogik besitzen.
+104. JSON ist Austausch-/Legacyformat, nicht dauerhaftes produktives Backend.
+105. Ein unterstütztes Backend benötigt dieselben fachlichen Regressionstests.
+106. PostgreSQL-spezifische Funktionen dürfen Sicherheit und Performance erhöhen,
+     aber keine unsichtbar andere Geschäftslogik erzeugen.
+107. Externe Systeme besitzen niemals die einzige Kopie eines Mietfuchs-Fachzustands.
+108. Eine neue Datenbank wird nur unterstützt, wenn der langfristige Nutzen
+     die dauerhaften Migrations- und Testkosten rechtfertigt.
+109. ORM entity ≠ domain entity.
+110. Repository abstraction ≠ lowest-common-denominator database design.
+```
+
+## 271.28 Definition of Done – Backend Foundation
+
+SQLite produktiv als Local Mode; PostgreSQL produktiv als Server Mode; db.json automatisch und sicher migrierbar; Settlement cent-genau identisch vor/nach Migration; Domain/Application ohne Prisma-/DB-Typen; alle Repository-Tests gegen beide Backends; Backup/Restore für beide getestet; Domain-Export/-Import funktioniert; SQLite-Netzwerkfilesysteme als unsupported dokumentiert; PostgreSQL Referenz für Cluster/Multiuser; keine dritte Datenbank in der V1-Testmatrix; Core ohne externe Infrastruktur vollständig lauffähig.
+
+## 271.29 Zielbild Deployment
+
+```text
+Einfachste Installation:  [ Mietfuchs: App + Worker + SQLite ]   (ein Prozess/Container)
+Homelab:                  Mietfuchs → PostgreSQL
+Erweiterter Server:       Reverse Proxy → Mietfuchs Web → PostgreSQL ← Mietfuchs Worker
+                          + optionale Adapter (Paperless / SMTP / Node-RED / Ollama)
+```
+
+## 271.30 Architekturentscheidung in einem Satz
+
+> Mietfuchs ist eine datenbankgestützte Anwendung mit SQLite als Zero-Config-Local-Backend und PostgreSQL als Referenzbackend für Server und Cluster; JSON bleibt das portable Legacy-/Austauschformat, externe Dienste bleiben optionale Adapter.
+
