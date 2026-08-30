@@ -5421,6 +5421,8 @@ Die zentrale Produktvision:
 
 **Stand:** 30.08.2026 · Status: Architekturentscheidung. Ziel: robuster PostgreSQL-Betrieb für Homelab/Server/Cluster **und** die für den ursprünglichen Mietfuchs wichtige einfache lokale Installation — mit der Möglichkeit, geeignete Änderungen nach Upstream zurückzuführen. (Abschnitte 1–30 des Original-Addendums = §271.1–§271.30.)
 
+> **Präzedenz:** Dieses Addendum revidiert §39 und §71, soweit dort PostgreSQL als einziges produktives Backend beschrieben wird — es gilt jetzt SQLite (Local Mode) + PostgreSQL (Server Mode). Die Begründungen aus §71 bleiben für den Server-Mode gültig.
+
 ## 271.1 Leitentscheidung
 
 Mietfuchs unterstützt langfristig genau **zwei** produktive relationale Persistenzmodi:
