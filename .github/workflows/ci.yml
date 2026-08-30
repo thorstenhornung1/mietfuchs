@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
 
 jobs:
@@ -16,7 +16,10 @@ jobs:
           cache: npm
       # npm install (nicht ci): postinstall installiert Server + Client mit.
       - run: npm install
-      # Tests der Berechnungs-Engine (node:test)
-      - run: npm test
+      # Tests der Berechnungs-Engine (node:test): Unit-Tests, Golden Master und Invarianten.
+      # Ein Fehlschlag hier bedeutet immer eine fachliche Verhaltensänderung der Abrechnung
+      # — siehe docs/settlement-baseline-befunde.md und die PR-Checkliste in CLAUDE.md.
+      - name: Tests (Unit, Golden Master, Invarianten)
+        run: npm test
       # Typecheck (tsc --noEmit) + Vite-Build
       - run: npm run build

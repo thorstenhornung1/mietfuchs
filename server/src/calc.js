@@ -336,13 +336,21 @@ export function taxReport(db, year) {
 // ---------- Hilfen ----------
 
 // Verteilt totalCents exakt auf die gegebenen (float) Rohanteile (Hare/largest remainder)
-function largestRemainder(totalCents, raws) {
+// Hare/largest remainder: verteilt `totalCents` centgenau auf die Rohanteile `raws`.
+// `keys` liefert je Rohanteil einen fachlich stabilen Schlüssel (i. d. R. die
+// Mietverhältnis-ID). Er entscheidet den Gleichstand: Haben mehrere Anteile denselben
+// Nachkommaanteil — der Regelfall bei gleich großen Einheiten, siehe Spec §56 —, dann darf
+// nicht die zufällige Array- oder Datenbankreihenfolge bestimmen, wer das Restcent bekommt
+// (Spec §271.26). Welcher Schlüssel gewinnt, ist fachlich beliebig; entscheidend ist, dass
+// dieselben Daten immer dasselbe Ergebnis liefern.
+function largestRemainder(totalCents, raws, keys = []) {
   if (raws.length === 0) return []
   const floors = raws.map((r) => Math.floor(r))
   let rest = totalCents - floors.reduce((a, b) => a + b, 0)
+  const keyOf = (i) => String(keys[i] ?? i)
   const order = raws
     .map((r, i) => [r - Math.floor(r), i])
-    .sort((a, b) => b[0] - a[0])
+    .sort((a, b) => b[0] - a[0] || keyOf(a[1]).localeCompare(keyOf(b[1])))
   for (let k = 0; rest > 0; k++, rest--) floors[order[k % order.length][1]]++
   for (let k = 0; rest < 0; k++, rest++) floors[order[order.length - 1 - (k % order.length)][1]]--
   return floors
@@ -442,9 +450,7 @@ export function computeSettlement(db, year) {
       }
     } else if (item.key === 'meter') {
       const data = consumptionByType[item.meterType]
-      if (!data || data.basis <= 0) {
-        warnings.push(`„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`)
-      } else {
+      if (data && data.basis > 0) {
         for (const t of partTenancies) {
           const meters = data.meters.filter((m) => m.unitId === t.unitId)
           let c = 0
@@ -465,21 +471,35 @@ export function computeSettlement(db, year) {
       }
     }
 
+    // Eine fehlende Verteilbasis darf nie stillschweigend beim Vermieter landen — der
+    // Vermieter würde den Datenmangel sonst nicht bemerken (Invariante 20). Nicht
+    // umlagefähige Kosten sind ausgenommen: dort ist das der gewollte Normalfall.
+    if (item.category !== 'Nicht umlagefähig' && targets.length === 0) {
+      warnings.push(
+        item.key === 'meter'
+          ? `„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`
+          : `„${item.description}": keine Verteilbasis für Schlüssel „${KEY_LABELS[item.key] || item.key}" — Betrag geht an den Vermieter.`,
+      )
+    }
+
     // Exakte Cent-Verteilung: wenn die Rohanteile die Gesamtsumme (nahezu) voll ausschöpfen,
     // wird centgenau auf die Mieter verteilt; ansonsten trägt der Vermieter die Differenz
     // (Leerstand, Eigenanteil, Rundungsrest).
     const rawSum = targets.reduce((a, x) => a + x.raw, 0)
     let shares
     if (targets.length > 0 && Math.abs(item.amountCents - rawSum) < 0.5) {
-      shares = largestRemainder(item.amountCents, targets.map((x) => x.raw))
+      shares = largestRemainder(item.amountCents, targets.map((x) => x.raw), targets.map((x) => x.t.id))
     } else {
       shares = targets.map((x) => Math.round(x.raw))
     }
     let distributed = 0
     targets.forEach((x, i) => {
-      distributed += shares[i]
       const st = statements.get(x.t.id)
-      if (!st) return // Mietverhältnis in nicht beteiligter Wohnung (nur bei Direktzuordnung möglich)
+      // Mietverhältnis in einer nicht beteiligten Wohnung (nur bei Direktzuordnung möglich):
+      // Es gibt keine Abrechnung, die den Anteil aufnehmen könnte — er bleibt beim Vermieter.
+      // `distributed` darf ihn deshalb nicht mitzählen, sonst verschwindet der Betrag.
+      if (!st) return
+      distributed += shares[i]
       const labor35a = item.labor35aCents && item.amountCents > 0
         ? Math.round(item.labor35aCents * (shares[i] / item.amountCents))
         : 0
