@@ -33,7 +33,8 @@
     "typecheck": "npm run typecheck -w @mietfuchs/domain -w @mietfuchs/server -w @mietfuchs/client",
     "build": "npm run build -w @mietfuchs/client",
     "start": "npm run start -w @mietfuchs/server",
-    "package": "node scripts/package-binaries.mjs"
+    "package": "node scripts/package-binaries.mjs",
+    "migrate": "npm run migrate -w @mietfuchs/server"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

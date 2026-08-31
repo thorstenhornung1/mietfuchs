@@ -30,13 +30,24 @@ export type OpenResult = {
 /** Dateisysteme, auf denen SQLite ausdrücklich nicht freigegeben ist (§271.3). */
 const NETWORK_FS = ['nfs', 'smbfs', 'cifs', 'ceph', 'fuse.ceph', 'afpfs', 'webdav', 'fuse.sshfs']
 
+export type OpenOptions = {
+  /**
+   * WAL einschalten (Standard). Für eine Datenbank, die aufgebaut und anschließend
+   * umbenannt wird, muss das **aus** bleiben: WAL legt die Beidateien `-wal` und `-shm`
+   * neben die Datenbank, und ein `rename` bewegt nur die Hauptdatei. Die Beidateien blieben
+   * verwaist liegen — und was noch im WAL steht und nicht in die Hauptdatei übertragen
+   * wurde, wäre verloren.
+   */
+  wal?: boolean
+}
+
 /**
  * Öffnet die lokale Datenbank, prüft sie und bringt das Schema auf Stand.
  *
  * Fehler beim Öffnen sind harte Fehler: Ein Local Mode, der ohne Datenbank weiterläuft,
  * würde stillschweigend nichts speichern.
  */
-export async function openLocalDatabase(file: string): Promise<OpenResult> {
+export async function openLocalDatabase(file: string, options: OpenOptions = {}): Promise<OpenResult> {
   const warnings: string[] = []
 
   if (file !== ':memory:') {
@@ -87,7 +98,7 @@ export async function openLocalDatabase(file: string): Promise<OpenResult> {
 
   // WAL erhöht die Nebenläufigkeit bei lokalem Speicher (§271.12) — auf Netzwerk-Dateisystemen
   // wäre es zusätzlich riskant, deshalb nur dort, wo nichts dagegen spricht.
-  if (file !== ':memory:' && warnings.length === 0) {
+  if ((options.wal ?? true) && file !== ':memory:' && warnings.length === 0) {
     db.runScript('PRAGMA journal_mode = WAL')
   }
 

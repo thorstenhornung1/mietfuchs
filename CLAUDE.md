@@ -26,6 +26,7 @@ npm run typecheck  # tsc --noEmit über Domain, Server und Client
 npm run build      # baut das Frontend nach apps/client/dist (tsc --noEmit + vite build)
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
+npm run migrate    # db.json → SQLite, einmalig und geprüft (§271.19)
 ```
 
 Ein einzelnes Paket ansprechen: `npm run <skript> -w @mietfuchs/{domain,server,client}`.
@@ -68,6 +69,8 @@ Es gibt **keinen Linter** und keine Client-Tests. Typecheck läuft über `npm ru
   DB-Constraints: dass ungültige Daten scheitern, nicht dass gültige durchgehen.
 - [backend-parity.test.js](apps/server/test/backend-parity.test.js) — **Gleichstand der
   Backends** (§271.26): alle Fixtures über db.json *und* SQLite, cent-genau identisch.
+- [migration.test.js](apps/server/test/migration.test.js) — Validator und Migrationspipeline;
+  vor allem, dass bei Fehlern **nichts** passiert.
 - [invariants.test.js](apps/server/test/invariants.test.js) — Eigenschaften, die für *jede*
   Eingabe gelten: Integer-Cent, Verteilungsvollständigkeit, Determinismus,
   Reihenfolgeunabhängigkeit, Zeitraumvollständigkeit, keine stillen Fallbacks,
@@ -142,6 +145,24 @@ läuft, verlangt aber ein 7,5 MB großes natives Addon neben der Binary. So blei
 Mode eine einzige Datei (§271.3). Prisma ist damit für PostgreSQL vorgesehen, nicht für
 SQLite. Daher `engines.node >= 24`: Dort ist `node:sqlite` stabil, darunter warnt es bei
 jedem Start.
+
+**Der Umstieg** (`npm run migrate`, §271.19) läuft in zehn Schritten: db.json erkennen →
+keine gefüllte Datenbank vorhanden → vollständig validieren → Backup → temporäre Datenbank →
+importieren → **Regression** → atomar aktivieren → Protokoll → db.json bleibt liegen.
+Der Prüfstein ist die Regression: §41 verlangt, dass die Abrechnung vor und nach der
+Migration cent-genau identisch ist. Geprüft wird deshalb **jedes Jahr, in dem der Bestand
+etwas enthält** — Abrechnung, Zählerübersicht, Mietkonto und Steuerreport. Weicht ein Cent
+ab, wird nicht aktiviert. Bei jedem Fehler bleibt alles, wie es war.
+
+Zwei Fallen, die dabei aufgefallen sind und die der Code jetzt festhält: Ein unbefristetes
+Mietverhältnis reicht für die Regression **bis ins laufende Jahr** (sonst blieben Jahre mit
+Mietsoll ungeprüft), und die temporäre Datenbank läuft **ohne WAL** — ein `rename` bewegt
+nur die Hauptdatei, die Beidateien `-wal`/`-shm` blieben verwaist zurück.
+
+Die Alt-Format-Regeln (fester Monatsbetrag → Staffel, feste Personenzahl → Staffel) stehen in
+[legacy-normalize.ts](apps/server/src/persistence/legacy-normalize.ts) und werden von
+`store.ts` **und** der Migration benutzt: Ein Bestand, der beim Laden anders normalisiert
+würde als beim Migrieren, änderte beim Umstieg die Abrechnung.
 
 Schema und Migrationen stehen als TypeScript-Konstanten in
 [migrations.ts](apps/server/src/persistence/sqlite/migrations.ts) — eine `.sql`-Datei müsste
