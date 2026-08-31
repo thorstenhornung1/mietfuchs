@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { Cents, CivilDate, Db, PersonEntry, PrepaymentEntry, RentEntry, Tenancy } from '@mietfuchs/domain'
+import type { Db } from '@mietfuchs/domain'
+import { normalizeLegacyDb } from './persistence/legacy-normalize.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // In der gepackten Binary (Bun --compile) liegt der Code in einem virtuellen,
@@ -36,51 +37,17 @@ const DEFAULT_DB: Db = {
   closedSettlements: [],
 }
 
-/**
- * So kann ein Mietverhältnis auf der Platte aussehen, bevor die Migrationen in `load()`
- * gelaufen sind: Ältere Bestände kennen die Staffeln noch nicht, sondern nur je einen
- * festen Wert. Der Typ macht sichtbar, dass die Datei ein anderes Bild hat als die Domäne.
- */
-type StoredTenancy = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents'> & {
-  personHistory?: PersonEntry[]
-  prepayments?: PrepaymentEntry[]
-  baseRents?: RentEntry[]
-  /** Altformat vor der Vorauszahlungs-Staffel: ein fester Monatsbetrag. */
-  prepaymentMonthlyCents?: Cents
-  /** Altformat vor der Personen-Staffel: eine feste Personenzahl. */
-  persons?: number
-  start: CivilDate
-}
-
 let db: Db | null = null
 
 function load(): Db {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
-  if (fs.existsSync(DB_FILE)) {
-    const stored = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) as Partial<Db>
-    db = { ...structuredClone(DEFAULT_DB), ...stored }
-    db.settings = { ...DEFAULT_DB.settings, ...db.settings }
-  } else {
-    db = structuredClone(DEFAULT_DB)
-  }
-  // Migrationen älterer Datenformate
-  for (const t of db.tenancies as unknown as StoredTenancy[]) {
-    // fester Monatsbetrag → Vorauszahlungs-Staffel
-    if (!Array.isArray(t.prepayments)) {
-      t.prepayments =
-        t.prepaymentMonthlyCents != null
-          ? [{ from: t.start.slice(0, 7), monthlyCents: t.prepaymentMonthlyCents }]
-          : []
-      delete t.prepaymentMonthlyCents
-    }
-    if (!t.prepaymentOverrides) t.prepaymentOverrides = {}
-    // feste Personenzahl → Personen-Staffel
-    if (!Array.isArray(t.personHistory)) {
-      t.personHistory = [{ from: t.start, persons: t.persons ?? 1 }]
-    }
-    // Kaltmiete-Staffel kam später dazu — Altbestand hat sie noch nicht
-    if (!Array.isArray(t.baseRents)) t.baseRents = []
-  }
+  const stored: Partial<Db> = fs.existsSync(DB_FILE)
+    ? (JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) as Partial<Db>)
+    : {}
+  // Die Alt-Format-Regeln stehen in legacy-normalize.ts, weil die Migration nach SQLite
+  // genau dieselben braucht — ein Bestand, der beim Laden anders normalisiert würde als
+  // beim Migrieren, änderte beim Umstieg die Abrechnung.
+  db = normalizeLegacyDb(stored, DEFAULT_DB).db
   return db
 }
 
