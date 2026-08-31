@@ -8,7 +8,7 @@
 import { LegacyJsonRepository } from '../src/persistence/legacy-json-repository.ts'
 
 /** Vollständiger db.json-Bestand aus einem Teil-Datensatz — fehlende Sammlungen sind leer. */
-function complete(db) {
+export function complete(db) {
   return {
     settings: {},
     units: [],

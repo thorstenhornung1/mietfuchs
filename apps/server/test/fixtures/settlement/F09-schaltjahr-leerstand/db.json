@@ -1,18 +1,39 @@
 {
   "settings": {},
   "units": [
-    { "id": "u1", "name": "Wohnung 1", "areaM2": 60, "participates": true },
-    { "id": "u2", "name": "Wohnung 2", "areaM2": 40, "participates": true }
+    {
+      "id": "u1",
+      "name": "Wohnung 1",
+      "areaM2": 60,
+      "participates": true
+    },
+    {
+      "id": "u2",
+      "name": "Wohnung 2",
+      "areaM2": 40,
+      "participates": true
+    }
   ],
   "tenancies": [
     {
       "id": "t1",
       "unitId": "u1",
       "tenantName": "Langzeitmieter",
+      "persons": 2,
       "start": "2020-01-01",
       "end": null,
-      "personHistory": [{ "from": "2020-01-01", "persons": 2 }],
-      "prepayments": [{ "from": "2020-01", "monthlyCents": 5000 }],
+      "personHistory": [
+        {
+          "from": "2020-01-01",
+          "persons": 2
+        }
+      ],
+      "prepayments": [
+        {
+          "from": "2020-01",
+          "monthlyCents": 5000
+        }
+      ],
       "prepaymentOverrides": {},
       "baseRents": []
     },
@@ -20,10 +41,21 @@
       "id": "t2",
       "unitId": "u2",
       "tenantName": "Neueinzug April",
+      "persons": 1,
       "start": "2024-04-01",
       "end": null,
-      "personHistory": [{ "from": "2024-04-01", "persons": 1 }],
-      "prepayments": [{ "from": "2024-04", "monthlyCents": 4000 }],
+      "personHistory": [
+        {
+          "from": "2024-04-01",
+          "persons": 1
+        }
+      ],
+      "prepayments": [
+        {
+          "from": "2024-04",
+          "monthlyCents": 4000
+        }
+      ],
       "prepaymentOverrides": {},
       "baseRents": []
     }

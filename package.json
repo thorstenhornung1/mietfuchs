@@ -21,7 +21,7 @@
     "anlage-v"
   ],
   "engines": {
-    "node": ">=22.18"
+    "node": ">=24"
   },
   "workspaces": [
     "apps/*",

@@ -64,6 +64,10 @@ Es gibt **keinen Linter** und keine Client-Tests. Typecheck läuft über `npm ru
   `expected.json` (Erwartung) und `README.md` (Handrechnung mit Spec-Referenz).
 - [repository.test.js](apps/server/test/repository.test.js) — der Vertrag des Persistenz-
   Adapters: was in einen Schnappschuss gehört und was nicht.
+- [sqlite.test.js](apps/server/test/sqlite.test.js) — Migrationen, Start-Checks und die
+  DB-Constraints: dass ungültige Daten scheitern, nicht dass gültige durchgehen.
+- [backend-parity.test.js](apps/server/test/backend-parity.test.js) — **Gleichstand der
+  Backends** (§271.26): alle Fixtures über db.json *und* SQLite, cent-genau identisch.
 - [invariants.test.js](apps/server/test/invariants.test.js) — Eigenschaften, die für *jede*
   Eingabe gelten: Integer-Cent, Verteilungsvollständigkeit, Determinismus,
   Reihenfolgeunabhängigkeit, Zeitraumvollständigkeit, keine stillen Fallbacks,
@@ -124,10 +128,27 @@ Persistenz → Repository → SettlementInput/LedgerInput → Calc Core → Erge
 
 Die Schnittstelle steht in [packages/domain/src/repositories.ts](packages/domain/src/repositories.ts),
 die Snapshot-Typen in [packages/domain/src/settlement/input.ts](packages/domain/src/settlement/input.ts);
-**die Domäne importiert nie einen Datenbanktreiber** (Invariante 109). Heute liegt dahinter
-noch die db.json ([LegacyJsonRepository](apps/server/src/persistence/legacy-json-repository.ts),
-als Übergang von §271.18 ausdrücklich erlaubt); mit #3 treten SQLite und PostgreSQL an ihre
-Stelle, ohne dass Engine oder Routen das bemerken.
+**die Domäne importiert nie einen Datenbanktreiber** (Invariante 109). Es gibt zwei Adapter:
+[LegacyJsonRepository](apps/server/src/persistence/legacy-json-repository.ts) über die db.json
+(Übergang, von §271.18 ausdrücklich erlaubt) und
+[SqliteRepository](apps/server/src/persistence/sqlite/sqlite-repository.ts). PostgreSQL folgt
+mit #3.
+
+**SQLite ohne externen Treiber.** Der Adapter spricht `node:sqlite` bzw. `bun:sqlite` — beide
+sind in die jeweilige Laufzeit eingebaut ([driver.ts](apps/server/src/persistence/sqlite/driver.ts)).
+Das ist kein Zufall, sondern der Grund für diesen Weg: Prismas SQLite-Adapter setzt auf
+better-sqlite3, das unter Bun überhaupt nicht läuft (oven-sh/bun#4290); der libSQL-Adapter
+läuft, verlangt aber ein 7,5 MB großes natives Addon neben der Binary. So bleibt der Local
+Mode eine einzige Datei (§271.3). Prisma ist damit für PostgreSQL vorgesehen, nicht für
+SQLite. Daher `engines.node >= 24`: Dort ist `node:sqlite` stabil, darunter warnt es bei
+jedem Start.
+
+Schema und Migrationen stehen als TypeScript-Konstanten in
+[migrations.ts](apps/server/src/persistence/sqlite/migrations.ts) — eine `.sql`-Datei müsste
+für die Binary eigens eingebettet werden. Beim Öffnen laufen die Start-Checks aus §271.12
+([startup.ts](apps/server/src/persistence/sqlite/startup.ts)): Verzeichnis beschreibbar,
+`PRAGMA foreign_keys = ON` (in SQLite je Verbindung standardmäßig **aus**), Integritätsprüfung,
+Schemaversion, Warnung bei erkennbarem Netzwerk-Dateisystem.
 
 Wichtig beim Bauen eines Snapshots: **Ablesungen dürfen nicht nach Jahr gefiltert werden.**
 Der Verbrauch wird zwischen zwei Ablesungen interpoliert, und der Anfangsstand eines Jahres

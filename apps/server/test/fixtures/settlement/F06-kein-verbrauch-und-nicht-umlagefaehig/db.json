@@ -1,17 +1,33 @@
 {
   "settings": {},
   "units": [
-    { "id": "u1", "name": "Wohnung 1", "areaM2": 50, "participates": true },
-    { "id": "u2", "name": "Wohnung 2", "areaM2": 50, "participates": true }
+    {
+      "id": "u1",
+      "name": "Wohnung 1",
+      "areaM2": 50,
+      "participates": true
+    },
+    {
+      "id": "u2",
+      "name": "Wohnung 2",
+      "areaM2": 50,
+      "participates": true
+    }
   ],
   "tenancies": [
     {
       "id": "t1",
       "unitId": "u1",
       "tenantName": "Mieter 1",
+      "persons": 2,
       "start": "2020-01-01",
       "end": null,
-      "personHistory": [{ "from": "2020-01-01", "persons": 2 }],
+      "personHistory": [
+        {
+          "from": "2020-01-01",
+          "persons": 2
+        }
+      ],
       "prepayments": [],
       "prepaymentOverrides": {},
       "baseRents": []
@@ -20,9 +36,15 @@
       "id": "t2",
       "unitId": "u2",
       "tenantName": "Mieter 2",
+      "persons": 2,
       "start": "2020-01-01",
       "end": null,
-      "personHistory": [{ "from": "2020-01-01", "persons": 2 }],
+      "personHistory": [
+        {
+          "from": "2020-01-01",
+          "persons": 2
+        }
+      ],
       "prepayments": [],
       "prepaymentOverrides": {},
       "baseRents": []
@@ -47,10 +69,28 @@
       "key": "area"
     }
   ],
-  "meters": [{ "id": "m1", "unitId": "u1", "type": "kaltwasser", "name": "Kaltwasser Wohnung 1", "unit": "m³" }],
+  "meters": [
+    {
+      "id": "m1",
+      "unitId": "u1",
+      "type": "kaltwasser",
+      "name": "Kaltwasser Wohnung 1",
+      "unit": "m³"
+    }
+  ],
   "readings": [
-    { "id": "r1", "meterId": "m1", "date": "2024-12-31", "value": 0 },
-    { "id": "r2", "meterId": "m1", "date": "2025-12-31", "value": 40 }
+    {
+      "id": "r1",
+      "meterId": "m1",
+      "date": "2024-12-31",
+      "value": 0
+    },
+    {
+      "id": "r2",
+      "meterId": "m1",
+      "date": "2025-12-31",
+      "value": 40
+    }
   ],
   "payments": [],
   "closedSettlements": []

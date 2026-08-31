@@ -40,7 +40,17 @@ export function loadFixtures() {
 export async function actualOf(db, year) {
   // Bewusst über das Repository: Der Golden Master prüft damit den ganzen Weg
   // Persistenz → Snapshot → Engine, nicht nur die Engine (Spec §35).
-  const input = await repositoryFor(db).loadSettlementInput(year)
+  return actualVia(repositoryFor(db), year)
+}
+
+/**
+ * Dieselbe Momentaufnahme über ein beliebiges Repository.
+ *
+ * Damit lässt sich derselbe Fixture-Satz gegen jedes Backend fahren — die Grundlage des
+ * Gleichstandstests aus §271.26 („keine backend-spezifischen Golden Results").
+ */
+export async function actualVia(repository, year) {
+  const input = await repository.loadSettlementInput(year)
   return {
     year,
     settlement: normalizeSettlement(computeSettlement(input)),
