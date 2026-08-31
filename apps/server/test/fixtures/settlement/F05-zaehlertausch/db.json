@@ -1,18 +1,39 @@
 {
   "settings": {},
   "units": [
-    { "id": "u1", "name": "Wohnung 1", "areaM2": 50, "participates": true },
-    { "id": "u2", "name": "Wohnung 2", "areaM2": 50, "participates": true }
+    {
+      "id": "u1",
+      "name": "Wohnung 1",
+      "areaM2": 50,
+      "participates": true
+    },
+    {
+      "id": "u2",
+      "name": "Wohnung 2",
+      "areaM2": 50,
+      "participates": true
+    }
   ],
   "tenancies": [
     {
       "id": "t1",
       "unitId": "u1",
       "tenantName": "Mieter 1",
+      "persons": 2,
       "start": "2020-01-01",
       "end": null,
-      "personHistory": [{ "from": "2020-01-01", "persons": 2 }],
-      "prepayments": [{ "from": "2020-01", "monthlyCents": 5000 }],
+      "personHistory": [
+        {
+          "from": "2020-01-01",
+          "persons": 2
+        }
+      ],
+      "prepayments": [
+        {
+          "from": "2020-01",
+          "monthlyCents": 5000
+        }
+      ],
       "prepaymentOverrides": {},
       "baseRents": []
     },
@@ -20,10 +41,21 @@
       "id": "t2",
       "unitId": "u2",
       "tenantName": "Mieter 2",
+      "persons": 2,
       "start": "2020-01-01",
       "end": null,
-      "personHistory": [{ "from": "2020-01-01", "persons": 2 }],
-      "prepayments": [{ "from": "2020-01", "monthlyCents": 5000 }],
+      "personHistory": [
+        {
+          "from": "2020-01-01",
+          "persons": 2
+        }
+      ],
+      "prepayments": [
+        {
+          "from": "2020-01",
+          "monthlyCents": 5000
+        }
+      ],
       "prepaymentOverrides": {},
       "baseRents": []
     }
@@ -40,13 +72,40 @@
     }
   ],
   "meters": [
-    { "id": "m1", "unitId": "u1", "type": "kaltwasser", "name": "Kaltwasser Wohnung 1", "unit": "m³" },
-    { "id": "m2", "unitId": "u2", "type": "kaltwasser", "name": "Kaltwasser Wohnung 2", "unit": "m³" }
+    {
+      "id": "m1",
+      "unitId": "u1",
+      "type": "kaltwasser",
+      "name": "Kaltwasser Wohnung 1",
+      "unit": "m³"
+    },
+    {
+      "id": "m2",
+      "unitId": "u2",
+      "type": "kaltwasser",
+      "name": "Kaltwasser Wohnung 2",
+      "unit": "m³"
+    }
   ],
   "readings": [
-    { "id": "r1", "meterId": "m1", "date": "2024-12-31", "value": 100 },
-    { "id": "r2", "meterId": "m1", "date": "2025-12-31", "value": 160 },
-    { "id": "r3", "meterId": "m2", "date": "2024-12-31", "value": 200 },
+    {
+      "id": "r1",
+      "meterId": "m1",
+      "date": "2024-12-31",
+      "value": 100
+    },
+    {
+      "id": "r2",
+      "meterId": "m1",
+      "date": "2025-12-31",
+      "value": 160
+    },
+    {
+      "id": "r3",
+      "meterId": "m2",
+      "date": "2024-12-31",
+      "value": 200
+    },
     {
       "id": "r4",
       "meterId": "m2",
@@ -55,7 +114,12 @@
       "replacement": true,
       "oldEndValue": 230
     },
-    { "id": "r5", "meterId": "m2", "date": "2025-12-31", "value": 20 }
+    {
+      "id": "r5",
+      "meterId": "m2",
+      "date": "2025-12-31",
+      "value": 20
+    }
   ],
   "payments": [],
   "closedSettlements": []

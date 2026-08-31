@@ -199,6 +199,32 @@ Dies ist die einzige bewusste Änderung an einer Golden-Master-Erwartung seit de
 
 ---
 
+## B9 — `Tenancy.persons` ist abgeleitet und kann von der Staffel abweichen
+
+**Status: im SQLite-Adapter bewusst normalisiert** · Test „der Schnappschuss aus SQLite
+gleicht dem aus der db.json Feld für Feld"
+
+Ein Mietverhältnis trägt zwei Angaben zur Personenzahl: die Staffel `personHistory` und ein
+einzelnes Feld `persons`. Die Berechnung benutzt **ausschließlich die Staffel** —
+`personsAt()` und `personDaysInPeriod()` lesen `persons` nie. Das Feld ist eine
+Bequemlichkeit für die Oberfläche.
+
+In der `db.json` sind das zwei getrennt gespeicherte Werte, die auseinanderlaufen können.
+Das relationale Schema speichert `persons` deshalb gar nicht erst, sondern leitet es beim
+Lesen aus der letzten Stufe der Staffel ab. Ein widersprüchlicher Altwert wird dabei still
+korrigiert — auf den Wert, der ohnehin gerechnet wurde.
+
+Aufgefallen ist das beim Gleichstandstest: Die Fixtures führten kein `persons`-Feld, echte
+`db.json`-Bestände dagegen schon. Beide Wege lieferten dasselbe Abrechnungsergebnis, aber
+unterschiedliche Schnappschüsse. Der Test vergleicht deshalb nicht nur das Ergebnis, sondern
+auch den Snapshot Feld für Feld — sonst wäre die Abweichung unbemerkt geblieben, bis ein
+späterer Verbraucher des Snapshots sich auf das Feld verlässt.
+
+Für die Migration (#4) bedeutet das: Die Normalisierung gehört in den Migrationsbericht, auch
+wenn sie die Abrechnung nicht verändert. Eine stille Korrektur bleibt eine Korrektur.
+
+---
+
 ## B6 — Vorschlag der neuen Vorauszahlung unterschätzt bei Teiljahren
 
 **Status: eingefrorene Baseline, fachlich zu prüfen** · Fixture F09

@@ -1,15 +1,33 @@
 {
   "settings": {},
-  "units": [{ "id": "u1", "name": "Wohnung 1", "areaM2": 100, "participates": true }],
+  "units": [
+    {
+      "id": "u1",
+      "name": "Wohnung 1",
+      "areaM2": 100,
+      "participates": true
+    }
+  ],
   "tenancies": [
     {
       "id": "ta",
       "unitId": "u1",
       "tenantName": "Vormieter",
+      "persons": 2,
       "start": "2020-01-01",
       "end": "2025-06-30",
-      "personHistory": [{ "from": "2020-01-01", "persons": 2 }],
-      "prepayments": [{ "from": "2020-01", "monthlyCents": 10000 }],
+      "personHistory": [
+        {
+          "from": "2020-01-01",
+          "persons": 2
+        }
+      ],
+      "prepayments": [
+        {
+          "from": "2020-01",
+          "monthlyCents": 10000
+        }
+      ],
       "prepaymentOverrides": {},
       "baseRents": []
     },
@@ -17,10 +35,21 @@
       "id": "tb",
       "unitId": "u1",
       "tenantName": "Nachmieter",
+      "persons": 2,
       "start": "2025-07-01",
       "end": null,
-      "personHistory": [{ "from": "2025-07-01", "persons": 2 }],
-      "prepayments": [{ "from": "2025-07", "monthlyCents": 12000 }],
+      "personHistory": [
+        {
+          "from": "2025-07-01",
+          "persons": 2
+        }
+      ],
+      "prepayments": [
+        {
+          "from": "2025-07",
+          "monthlyCents": 12000
+        }
+      ],
       "prepaymentOverrides": {},
       "baseRents": []
     }

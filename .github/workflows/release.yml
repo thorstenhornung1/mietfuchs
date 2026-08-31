@@ -25,7 +25,7 @@ jobs:
       # Node für npm install (Server-/Client-Deps) und den vite-Build des Frontends.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       # Bun für das Kompilieren der Binaries.
       - uses: oven-sh/setup-bun@v2
