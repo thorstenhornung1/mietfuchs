@@ -313,12 +313,25 @@ if (PACKAGED) {
 
 // Standard-Browser mit der App öffnen (nur in der gepackten Binary — im Dev stört das).
 function openBrowser(url: string): void {
+  const [command, args]: [string, string[]] =
+    process.platform === 'win32'
+      ? ['cmd', ['/c', 'start', '""', url]]
+      : process.platform === 'darwin'
+        ? ['open', [url]]
+        : ['xdg-open', [url]]
   try {
-    if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' }).unref()
-    else if (process.platform === 'darwin') spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
-    else spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref()
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+    // Ein fehlendes Programm meldet spawn NICHT als Ausnahme, sondern asynchron über ein
+    // 'error'-Ereignis — der try/catch darum herum fängt es also nicht. Ohne Zuhörer wird
+    // daraus ein unbehandelter Fehler, und der Serverprozess beendet sich unmittelbar nach
+    // dem Start. Auf einem headless Linux-Server ohne xdg-open (Homelab, Container, SSH)
+    // war Mietfuchs damit nicht startbar, obwohl der Server bereits lauschte.
+    child.on('error', () => {
+      console.log(`Kein Browser gestartet (${command} nicht verfügbar) — bitte ${url} von Hand öffnen.`)
+    })
+    child.unref()
   } catch {
-    /* egal — Nutzer kann die URL notfalls von Hand öffnen */
+    /* egal — die URL steht in der Startmeldung darüber */
   }
 }
 

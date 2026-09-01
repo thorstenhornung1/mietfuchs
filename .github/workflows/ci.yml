@@ -27,3 +27,55 @@ jobs:
         run: npm test
       # Vite-Build des Frontends
       - run: npm run build
+
+  # Die Auslieferungsartefakte. Bis hierher baute nur der Release-Workflow beim Tag
+  # Binaries — ein Verpackungsfehler wäre also erst beim Veröffentlichen aufgefallen,
+  # und ein Startfehler überhaupt erst beim Nutzer. Genau so blieb der Absturz auf
+  # headless Linux unentdeckt (siehe fix/headless-browser-launch).
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      # Bun kompiliert die Binaries; alle Ziele entstehen auf diesem einen Runner.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: npm install
+
+      - name: Binaries bauen (alle Ziele)
+        run: npm run package
+
+      - name: Alle vier Ziele vorhanden?
+        run: |
+          set -euo pipefail
+          for f in mietfuchs-win.exe mietfuchs-macos-intel mietfuchs-macos-apple-silicon mietfuchs-linux; do
+            test -s "dist-bin/$f" || { echo "fehlt oder leer: $f"; exit 1; }
+            echo "  $f  $(du -h "dist-bin/$f" | cut -f1)"
+          done
+
+      # Der eigentliche Prüfstein: Die Binary muss auch ohne Desktop starten. PATH wird
+      # bewusst leer gesetzt, damit kein xdg-open auffindbar ist — die Lage auf jedem
+      # Server, in jedem Container und über SSH.
+      - name: Linux-Binary starten (headless, ohne xdg-open)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/smoke"
+          cp dist-bin/mietfuchs-linux "$RUNNER_TEMP/smoke/"
+          cd "$RUNNER_TEMP/smoke"
+          PATH=/nonexistent NKA_PORT=3001 ./mietfuchs-linux > log.txt 2>&1 &
+          PID=$!
+          for _ in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:3001/api/settings && break
+            sleep 1
+          done
+          kill -0 "$PID" 2>/dev/null || { echo 'Der Serverprozess lebt nicht mehr:'; cat log.txt; exit 1; }
+          curl -fsS -o /dev/null -w '  Frontend  HTTP %{http_code}\n' http://127.0.0.1:3001/
+          curl -fsS -o /dev/null -w '  API       HTTP %{http_code}\n' http://127.0.0.1:3001/api/settlement/2025
+          test -d data || { echo 'Das Datenverzeichnis neben der Binary fehlt.'; exit 1; }
+          kill "$PID"
+          echo '--- Ausgabe der Binary ---'
+          cat log.txt
