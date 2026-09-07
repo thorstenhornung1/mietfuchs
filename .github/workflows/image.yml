@@ -1,0 +1,85 @@
+name: Container-Image (GHCR)
+
+# Baut das Container-Image für die Homelab-Testinstanz (immo.hornung-bn.de) und
+# schiebt es nach ghcr.io/thorstenhornung1/mietfuchs.
+#
+# Warum ein eigener Workflow und nicht release.yml erweitert:
+# release.yml hängt an `v*`-Tags und baut die Endanwender-Binaries. Der Next-Zweig
+# trägt (noch) keine Tags — die Testinstanz soll aber den Arbeitsstand zeigen.
+# Deshalb triggert dieser Workflow auf den Branch und taggt mit dem Commit-SHA.
+#
+# WICHTIG — kein `latest`: Auf dem Swarm wird ausschließlich ein SHA-Tag deployt
+# (swarm-stacks-Konvention). Ein beweglicher Tag zieht sonst beim nächsten
+# Node-Neustart unkontrolliert eine ungetestete Version. Der Branch-Tag `next`
+# entsteht nur als Wegweiser und gehört nicht in ein Stack-File.
+on:
+  push:
+    branches: [next]
+    # Reine Dokumentationsänderungen brauchen kein neues Image.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch oder Tag, der gebaut werden soll (z. B. fix/headless-browser-launch)'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/mietfuchs
+
+jobs:
+  build-and-push:
+    # Bewusst GitHub-hosted: Der self-hosted `homelab`-Runner ist an anderen Repos
+    # registriert, nicht an diesem. Das Repo ist public, die Minuten kosten nichts.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: An GHCR anmelden
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags und Labels ableiten
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=short,prefix=sha-
+            type=ref,event=branch
+
+      - name: Image bauen und pushen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Baseline-amd64, nicht amd64/v3: Mietfuchs hat kein selbst kompiliertes
+          # natives Modul (SQLite kommt aus `node:sqlite`), ein Micro-Architecture-
+          # Level bringt also nichts — würde aber auf älteren Swarm-Nodes ohne AVX2
+          # zur Laufzeit scheitern (vgl. swarm-stacks#9/#12).
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Gepushte Tags ausgeben
+        run: |
+          echo 'Im Stack-File ist der sha-Tag zu referenzieren:'
+          echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n'

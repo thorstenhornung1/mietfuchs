@@ -10,6 +10,7 @@ import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '.
 import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.ts'
 import { errorMessage } from './errors.ts'
 import { LegacyJsonRepository } from './persistence/legacy-json-repository.ts'
+import { healthReport } from './health.ts'
 import { CRUD_COLLECTIONS } from '@mietfuchs/domain'
 import type { CrudCollection, Db, Identifiable } from '@mietfuchs/domain'
 
@@ -284,6 +285,28 @@ app.get('/api/ollama/status', async (req, res) => {
   }
 })
 
+// ---------- Betriebszustand (§94 „Systemadministration – F0 Lite") ----------
+// Muss VOR dem SPA-Catch-All stehen: der greift jeden Pfad außer /api und /uploads ab
+// und würde /healthz sonst mit der index.html beantworten — HTTP 200 für einen kaputten
+// Container. Der Pfad liegt bewusst nicht unter /api: Er ist Betriebsschnittstelle für
+// den Orchestrator, nicht Teil der Anwendungs-API.
+//
+// 503 statt 200 bei einem Befund ist der ganze Zweck: Ein Healthcheck, der immer 200
+// liefert, verschiebt den Ausfall nur auf den Zeitpunkt, an dem jemand Daten sucht.
+const APP_VERSION = (() => {
+  // In der gepackten Binary (Bun --compile) liegt keine package.json im Dateisystem.
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version as string
+  } catch {
+    return 'unbekannt'
+  }
+})()
+
+app.get('/healthz', (req, res) => {
+  const bericht = healthReport({ dataDir: DATA_DIR, version: APP_VERSION })
+  res.status(bericht.status === 'ok' ? 200 : 503).json(bericht)
+})
+
 // ---------- Frontend (Produktions-Build) ----------
 // Gepackte Binary (Bun --compile): das Frontend ist ins Binary eingebettet und wird
 // aus dem generierten Modul embedded-client.js ausgeliefert (siehe scripts/embed-client.mjs).
@@ -313,12 +336,25 @@ if (PACKAGED) {
 
 // Standard-Browser mit der App öffnen (nur in der gepackten Binary — im Dev stört das).
 function openBrowser(url: string): void {
+  const [command, args]: [string, string[]] =
+    process.platform === 'win32'
+      ? ['cmd', ['/c', 'start', '""', url]]
+      : process.platform === 'darwin'
+        ? ['open', [url]]
+        : ['xdg-open', [url]]
   try {
-    if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' }).unref()
-    else if (process.platform === 'darwin') spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
-    else spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref()
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+    // Ein fehlendes Programm meldet spawn NICHT als Ausnahme, sondern asynchron über ein
+    // 'error'-Ereignis — der try/catch darum herum fängt es also nicht. Ohne Zuhörer wird
+    // daraus ein unbehandelter Fehler, und der Serverprozess beendet sich unmittelbar nach
+    // dem Start. Auf einem headless Linux-Server ohne xdg-open (Homelab, Container, SSH)
+    // war Mietfuchs damit nicht startbar, obwohl der Server bereits lauschte.
+    child.on('error', () => {
+      console.log(`Kein Browser gestartet (${command} nicht verfügbar) — bitte ${url} von Hand öffnen.`)
+    })
+    child.unref()
   } catch {
-    /* egal — Nutzer kann die URL notfalls von Hand öffnen */
+    /* egal — die URL steht in der Startmeldung darüber */
   }
 }
 
