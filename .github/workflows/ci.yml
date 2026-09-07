@@ -75,6 +75,9 @@ jobs:
           kill -0 "$PID" 2>/dev/null || { echo 'Der Serverprozess lebt nicht mehr:'; cat log.txt; exit 1; }
           curl -fsS -o /dev/null -w '  Frontend  HTTP %{http_code}\n' http://127.0.0.1:3001/
           curl -fsS -o /dev/null -w '  API       HTTP %{http_code}\n' http://127.0.0.1:3001/api/settlement/2025
+          # /healthz muss 200 liefern UND als JSON antworten — käme hier die index.html
+          # zurück, stünde der Endpunkt hinter dem SPA-Catch-All und wäre wertlos.
+          curl -fsS -w '  Health    HTTP %{http_code}\n' http://127.0.0.1:3001/healthz | grep -q '"status":"ok"'
           test -d data || { echo 'Das Datenverzeichnis neben der Binary fehlt.'; exit 1; }
           kill "$PID"
           echo '--- Ausgabe der Binary ---'

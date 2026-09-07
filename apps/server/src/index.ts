@@ -10,6 +10,7 @@ import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '.
 import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.ts'
 import { errorMessage } from './errors.ts'
 import { LegacyJsonRepository } from './persistence/legacy-json-repository.ts'
+import { healthReport } from './health.ts'
 import { CRUD_COLLECTIONS } from '@mietfuchs/domain'
 import type { CrudCollection, Db, Identifiable } from '@mietfuchs/domain'
 
@@ -282,6 +283,28 @@ app.get('/api/ollama/status', async (req, res) => {
   } catch (err) {
     res.json({ ok: false, error: errorMessage(err) })
   }
+})
+
+// ---------- Betriebszustand (§94 „Systemadministration – F0 Lite") ----------
+// Muss VOR dem SPA-Catch-All stehen: der greift jeden Pfad außer /api und /uploads ab
+// und würde /healthz sonst mit der index.html beantworten — HTTP 200 für einen kaputten
+// Container. Der Pfad liegt bewusst nicht unter /api: Er ist Betriebsschnittstelle für
+// den Orchestrator, nicht Teil der Anwendungs-API.
+//
+// 503 statt 200 bei einem Befund ist der ganze Zweck: Ein Healthcheck, der immer 200
+// liefert, verschiebt den Ausfall nur auf den Zeitpunkt, an dem jemand Daten sucht.
+const APP_VERSION = (() => {
+  // In der gepackten Binary (Bun --compile) liegt keine package.json im Dateisystem.
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version as string
+  } catch {
+    return 'unbekannt'
+  }
+})()
+
+app.get('/healthz', (req, res) => {
+  const bericht = healthReport({ dataDir: DATA_DIR, version: APP_VERSION })
+  res.status(bericht.status === 'ok' ? 200 : 503).json(bericht)
 })
 
 // ---------- Frontend (Produktions-Build) ----------

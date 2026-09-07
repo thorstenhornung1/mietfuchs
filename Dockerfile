@@ -38,4 +38,11 @@ EXPOSE 3001
 #   docker run -p 3001:3001 -v mietfuchs-data:/app/apps/server/data <image>
 VOLUME ["/app/apps/server/data"]
 
+# Betriebszustand statt bloßer Prozessliveness: /healthz meldet 503, wenn der
+# Datenbestand unlesbar oder das Volume nicht beschreibbar ist. Ohne das gilt ein
+# Container als gesund, der munter in ein nicht gemountetes Verzeichnis schreibt.
+# Kein curl im Image (node:24-slim) — Node bringt fetch selbst mit.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.NKA_PORT||3001)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "apps/server/src/index.ts"]
