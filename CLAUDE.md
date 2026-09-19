@@ -171,6 +171,20 @@ Reading, CostItem, Settings, Settlement …). Server und Client müssen hier kon
 Die `KEY_LABELS` existieren bewusst doppelt (calc.js liefert UI-Strings im Settlement, types.ts
 hat eigene Labels für die Eingabe-Oberfläche).
 
+**Feiertage** ([server/src/holidays.js](server/src/holidays.js)): dünner Adapter um die
+Bibliothek `date-holidays` (exakt gepinnt, Daten unter CC BY-SA 3.0, Nennung in der README).
+Er übersetzt einen Ort (`Place` in types.ts: `federalState` und die Antworten zu Mariä
+Himmelfahrt, Augsburg und Fronleichnam) in Land und Region und liefert die gesetzlichen
+Feiertage (`type === 'public'`). Die Settings kennt er nicht, er bekommt nur das Ortsobjekt;
+so kann der Ort später an einem Objekt statt am einzigen Haus hängen. Kommen bei fehlender
+Angabe oder „weiß nicht" mehrere Regionen in Frage, wählt der Aufrufer die vorsichtige
+Richtung: `uncertain: 'include'` zählt jeden möglichen Feiertag (Frist endet eher später, etwa
+für Rückstände), `'exclude'` nur die sicheren (Frist endet eher früher, etwa für eine eigene
+Kündigung). Geprüft gegen die Python-Bibliothek holidays für alle Länder und Regionen von 1995
+bis 2100 ([server/test/fixtures/holidays/](server/test/fixtures/holidays/README.md)). Nach einem
+Update von date-holidays den Test laufen lassen; Abweichungen nach dem Feiertagsgesetz des
+Landes klären, nicht raten.
+
 **KI-Belegauswertung** ([server/src/extract.js](server/src/extract.js)): optional, gegen eine
 lokale **Ollama**-Instanz (URL/Modell aus den Settings). PDF → Textebene via `pdf-parse`;
 Scans ohne (brauchbare) Textebene werden per `pdf-to-img` seitenweise als PNG gerendert und

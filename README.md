@@ -222,3 +222,11 @@ in den Einstellungen `http://host.docker.internal:11434` eintragen (statt `local
 [MIT-Lizenz](LICENSE). Das Tool unterstützt bei der Erstellung der Abrechnung, ist aber
 **keine Rechts- oder Steuerberatung**; die fachliche und rechtliche Prüfung der Ergebnisse
 bleibt beim Vermieter. Nutzung auf eigene Verantwortung.
+
+Die gesetzlichen Feiertage stammen aus der Bibliothek
+[date-holidays](https://github.com/commenthol/date-holidays) von commenthol. Ihr Code steht
+unter der ISC-Lizenz, ihre Feiertagsdaten unter
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/deed.de); die Angaben für
+Deutschland beruhen auf dem Wikipedia-Artikel
+[Feiertage in Deutschland](https://de.wikipedia.org/wiki/Feiertage_in_Deutschland). Mietfuchs
+nutzt die Daten unverändert.

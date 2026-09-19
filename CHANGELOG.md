@@ -15,6 +15,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Augsburg liegt, in Sachsen und Thüringen, ob Fronleichnam Feiertag ist. „Weiß nicht" ist
   eine gültige Antwort. Die Angaben sind die Grundlage für Fristen, die nach Werktagen zählen.
   Beitrag von [@thorstenhornung1](https://github.com/thorstenhornung1).
+- **Gesetzliche Feiertage aller Bundesländer** als Grundlage für Fristen, einschließlich der
+  Feiertage, die nur in einem Teil der Gemeinden gelten. Die Daten stammen aus der Bibliothek
+  [date-holidays](https://github.com/commenthol/date-holidays) und sind für 1995 bis 2100 gegen
+  eine zweite, unabhängige Quelle geprüft. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1).
 
 ### Behoben
 
