@@ -153,7 +153,10 @@ die ganze fachliche Komplexität:
   die Verteilung bereits abgerechneter Jahre verändern würde.
 - **Mietkonto** (`rentLedger`): Kaltmiete-Staffel (`baseRents`) + Vorauszahlung ergeben das
   monatliche Soll (Bruttomiete); Zahlungseingänge (`payments`) werden Jan→Dez FIFO auf die
-  Monate verteilt (Status bezahlt/teilweise/offen).
+  Monate verteilt (Status bezahlt/teilweise/offen). Rückstand ist ein Monat erst nach seiner
+  Zahlungsfrist (`rentPayableBy`: dritter Werktag, §556b Abs. 1 BGB, ohne Samstage) zum
+  Stichtag `asOf`, den die Route auf heute setzt; davor heißt er `upcoming`. Ohne Stichtag
+  gilt das Jahr als abgelaufen (so ruft `taxReport` das Mietkonto auf).
 - **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (aus `rentLedger`, Soll + Ist) und
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,
   vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester

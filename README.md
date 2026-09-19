@@ -114,6 +114,8 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
    Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
    Zahlungseingänge füllen die Monate der Reihe nach — ein Monatsraster zeigt *bezahlt /
    teilweise / offen*, dazu Brutto/Netto-Aufschlüsselung und offene Rückstände je Mieter.
+   Als Rückstand zählt ein Monat erst, wenn die Zahlungsfrist abgelaufen ist (dritter Werktag
+   des Monats, §556b BGB) — im laufenden Jahr bleiben die kommenden Monate grau.
 6. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung — Einnahmen (Kaltmiete +
    Umlagen, wahlweise als vereinbartes Soll oder tatsächlich gezahlt/Zuflussprinzip),
    Werbungskosten nach Anlage-V-Gruppen sowie der Überschuss. Bei gemischt genutztem Gebäude

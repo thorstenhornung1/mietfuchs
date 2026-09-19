@@ -9,6 +9,7 @@ import {
   daysInYear,
   personDaysInPeriod,
   rentLedger,
+  rentPayableBy,
   taxReport,
 } from '../src/calc.js'
 
@@ -398,6 +399,127 @@ test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () 
   assert.equal(r.months[6].sollCents, 50000) // Juli
   assert.equal(r.sollYearCents, 300000) // 6 × 500 €
   assert.equal(r.openMonths, 6) // Juli–Dez unbezahlt
+})
+
+// ---------- Mietkonto: Zahlungsfrist nach § 556b Abs. 1 BGB ----------
+// Die Miete ist spätestens am dritten Werktag des Monats zu zahlen. Samstage zählen dabei nicht
+// mit (BGH, Urteil vom 13.07.2010 – VIII ZR 129/09), Sonn- und Feiertage ohnehin nicht. Erst
+// wenn diese Frist abgelaufen ist, ist ein unbezahlter Monat ein Rückstand. Die erwarteten Tage
+// sind von Hand am Kalender abgezählt; die Osterdaten stammen aus dem Kirchenkalender.
+
+test('Zahlungsfrist: dritter Werktag, Samstage, Sonn- und Feiertage zählen nicht mit', () => {
+  const faelle = [
+    // [Jahr, Monat, letzter pünktlicher Zahltag, Herleitung]
+    [2026, 2, '2026-02-04', 'So 1. · Mo 2. (1) · Di 3. (2) · Mi 4. (3)'],
+    [2026, 9, '2026-09-03', 'Di 1. (1) · Mi 2. (2) · Do 3. (3)'],
+    [2026, 8, '2026-08-05', 'Sa 1. zählt nicht · So 2. · Mo 3. (1) · Di 4. (2) · Mi 5. (3)'],
+    [2027, 7, '2027-07-05', 'Do 1. (1) · Fr 2. (2) · Sa 3. zählt nicht · So 4. · Mo 5. (3)'],
+    [2026, 5, '2026-05-06', 'Fr 1. Tag der Arbeit · Sa 2. · So 3. · Mo 4. (1) · Di 5. (2) · Mi 6. (3)'],
+    [2025, 10, '2025-10-06', 'Mi 1. (1) · Do 2. (2) · Fr 3. Tag der Deutschen Einheit · Mo 6. (3)'],
+    // Ostern 2026 am 5. April: Karfreitag 3. April, Ostermontag 6. April
+    [2026, 4, '2026-04-07', 'Mi 1. (1) · Do 2. (2) · Fr 3. Karfreitag · Mo 6. Ostermontag · Di 7. (3)'],
+    // Ostern 2024 am 31. März: Ostermontag 1. April
+    [2024, 4, '2024-04-04', 'Mo 1. Ostermontag · Di 2. (1) · Mi 3. (2) · Do 4. (3)'],
+    // Ostern 2011 am 24. April: Christi Himmelfahrt 2. Juni (39 Tage nach Ostern)
+    [2011, 6, '2011-06-06', 'Mi 1. (1) · Do 2. Christi Himmelfahrt · Fr 3. (2) · Mo 6. (3)'],
+    // Ostern 2020 am 12. April: Pfingstmontag 1. Juni (50 Tage nach Ostern)
+    [2020, 6, '2020-06-04', 'Mo 1. Pfingstmontag · Di 2. (1) · Mi 3. (2) · Do 4. (3)'],
+  ]
+  for (const [jahr, monat, erwartet, herleitung] of faelle) {
+    assert.equal(rentPayableBy(jahr, monat), erwartet, `${monat}/${jahr}: ${herleitung}`)
+  }
+})
+
+test('Zahlungsfrist: Feiertage einzelner Länder zählen überall, ein Rückstand erscheint nie zu früh', () => {
+  // Mietfuchs kennt das Bundesland nicht. Gilt ein Feiertag nur in einigen Ländern, verschiebt
+  // er die Frist trotzdem — in den übrigen Ländern erscheint ein Rückstand dann einen Tag später.
+  const faelle = [
+    [2026, 1, '2026-01-07', 'Do 1. Neujahr · Fr 2. (1) · Mo 5. (2) · Di 6. Heilige Drei Könige · Mi 7. (3)'],
+    // Ostern 2021 am 4. April: Fronleichnam 3. Juni (60 Tage nach Ostern)
+    [2021, 6, '2021-06-04', 'Di 1. (1) · Mi 2. (2) · Do 3. Fronleichnam · Fr 4. (3)'],
+    [2027, 11, '2027-11-04', 'Mo 1. Allerheiligen · Di 2. (1) · Mi 3. (2) · Do 4. (3)'],
+  ]
+  for (const [jahr, monat, erwartet, herleitung] of faelle) {
+    assert.equal(rentPayableBy(jahr, monat), erwartet, `${monat}/${jahr}: ${herleitung}`)
+  }
+})
+
+// Laufendes Jahr 2026: Bruttomiete 1.000 € (800 € Kaltmiete + 200 € Vorauszahlung) ab Januar.
+function mietkonto2026(gezahltCents) {
+  return {
+    settings: {},
+    units: [{ id: 'u1', name: 'OG links', areaM2: 90, participates: true }],
+    tenancies: [
+      {
+        id: 't1', unitId: 'u1', tenantName: 'Familie A', start: '2026-01-01', end: null,
+        personHistory: [{ from: '2026-01-01', persons: 2 }],
+        baseRents: [{ from: '2026-01', monthlyCents: 80000 }],
+        prepayments: [{ from: '2026-01', monthlyCents: 20000 }],
+      },
+    ],
+    payments: [{ id: 'p1', tenancyId: 't1', date: '2026-08-03', amountCents: gezahltCents }],
+  }
+}
+
+test('Mietkonto im laufenden Jahr: Monate vor Ablauf der Zahlungsfrist sind kein Rückstand', () => {
+  // Stichtag 19.09.2026, gezahlt 8.000 € (Januar bis August). Die Frist für September endete
+  // am 3.9., die für Oktober endet erst am 5.10.
+  const l = rentLedger(mietkonto2026(800000), 2026, '2026-09-19')
+  const r = l.rows[0]
+  assert.equal(l.asOf, '2026-09-19')
+  assert.deepEqual(
+    r.months.map((m) => m.status),
+    ['paid', 'paid', 'paid', 'paid', 'paid', 'paid', 'paid', 'paid', 'open', 'upcoming', 'upcoming', 'upcoming'],
+  )
+  assert.equal(r.months[8].payableBy, '2026-09-03')
+  assert.equal(r.months[9].payableBy, '2026-10-05')
+  assert.equal(r.sollYearCents, 1200000) // das Jahres-Soll bleibt 12 × 1.000 €
+  assert.equal(r.dueSollCents, 900000) // fällig sind Januar bis September
+  assert.equal(r.balanceCents, -100000) // 8.000 − 9.000 €: nur der September ist rückständig
+  assert.equal(r.openMonths, 1)
+  assert.equal(l.totals.openCents, 100000)
+})
+
+test('Mietkonto: am dritten Werktag ist die Miete noch pünktlich, am Tag danach rückständig', () => {
+  const amFristtag = rentLedger(mietkonto2026(800000), 2026, '2026-09-03').rows[0]
+  assert.equal(amFristtag.months[8].status, 'upcoming')
+  assert.equal(amFristtag.dueSollCents, 800000)
+  assert.equal(amFristtag.balanceCents, 0)
+  assert.equal(amFristtag.openMonths, 0)
+
+  const danach = rentLedger(mietkonto2026(800000), 2026, '2026-09-04').rows[0]
+  assert.equal(danach.months[8].status, 'open')
+  assert.equal(danach.dueSollCents, 900000)
+  assert.equal(danach.balanceCents, -100000)
+  assert.equal(danach.openMonths, 1)
+})
+
+test('Mietkonto: im Voraus gezahlte Miete deckt den Monat und zählt als Guthaben', () => {
+  // 9.500 €: Januar bis September voll, Oktober zur Hälfte — der Oktober ist noch nicht fällig.
+  const teil = rentLedger(mietkonto2026(950000), 2026, '2026-09-19').rows[0]
+  assert.equal(teil.months[8].status, 'paid')
+  assert.equal(teil.months[9].status, 'upcoming')
+  assert.equal(teil.months[9].paidCents, 50000)
+  assert.equal(teil.balanceCents, 50000) // 9.500 − 9.000 €
+  assert.equal(teil.openMonths, 0)
+
+  // 10.000 €: der Oktober ist vollständig im Voraus bezahlt
+  const voll = rentLedger(mietkonto2026(1000000), 2026, '2026-09-19').rows[0]
+  assert.equal(voll.months[9].status, 'paid')
+  assert.equal(voll.months[10].status, 'upcoming')
+  assert.equal(voll.balanceCents, 100000) // 10.000 − 9.000 €
+})
+
+test('Mietkonto: ein abgelaufenes Jahr rechnet mit Stichtag genauso wie ohne', () => {
+  // Nach dem 3.12.2026 ist jeder Monat des Jahres fällig. Ohne Stichtag — so ruft die
+  // Steuerübersicht das Mietkonto auf — gilt das Jahr als abgelaufen.
+  const ohne = rentLedger(mietkonto2026(800000), 2026)
+  const mit = rentLedger(mietkonto2026(800000), 2026, '2027-01-04')
+  assert.equal(ohne.asOf, null)
+  assert.deepEqual(mit.rows, ohne.rows)
+  assert.deepEqual(mit.totals, ohne.totals)
+  assert.equal(ohne.rows[0].balanceCents, -400000) // September bis Dezember offen
+  assert.equal(ohne.rows[0].openMonths, 4)
 })
 
 // ---------- Eigennutzung in der Verteilbasis ----------

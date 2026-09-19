@@ -220,7 +220,8 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .rent-month.partial { background: var(--amber-soft); border-color: var(--amber-soft); color: var(--amber); cursor: pointer; }
 .rent-month.open { background: var(--red-soft); border-color: var(--red-soft); color: var(--red); cursor: pointer; }
 .rent-month.none { color: var(--muted); opacity: 0.5; }
-.rent-month.partial:hover, .rent-month.open:hover { outline: 2px solid var(--accent); }
+.rent-month.upcoming { color: var(--muted); cursor: pointer; }
+.rent-month.partial:hover, .rent-month.open:hover, .rent-month.upcoming:hover { outline: 2px solid var(--accent); }
 @media (max-width: 720px) { .rent-grid { grid-template-columns: repeat(6, 1fr); } }
 
 .chip { display: inline-block; padding: 2px 9px; margin: 0 6px 6px 0; border-radius: 99px; font-size: 12px; font-weight: 500; }

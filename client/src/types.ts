@@ -90,7 +90,8 @@ export type Payment = {
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
 
-export type RentMonthStatus = 'paid' | 'partial' | 'open'
+// 'upcoming' = nicht (voll) bezahlt, aber die Zahlungsfrist läuft noch — kein Rückstand
+export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'upcoming'
 
 export type RentMonth = {
   month: number // 1..12
@@ -99,6 +100,7 @@ export type RentMonth = {
   sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung
   paidCents: number // dem Monat zugeordneter Zahlungseingang
   status: RentMonthStatus
+  payableBy: string // 'YYYY-MM-DD' — Zahlungsfrist: dritter Werktag (§ 556b Abs. 1 BGB)
 }
 
 export type RentLedgerRow = {
@@ -109,13 +111,15 @@ export type RentLedgerRow = {
   sollYearCents: number // Brutto-Soll des Jahres
   baseRentYearCents: number // davon Kaltmiete (Netto)
   prepaymentYearCents: number // davon NK-Vorauszahlung
+  dueSollCents: number // Soll der Monate, deren Zahlungsfrist am Stichtag abgelaufen ist
   paidYearCents: number
-  balanceCents: number // paid − soll: >0 Guthaben/Überzahlung, <0 offener Rückstand
-  openMonths: number
+  balanceCents: number // paid − fälliges Soll: >0 Guthaben/Überzahlung, <0 offener Rückstand
+  openMonths: number // Monate mit abgelaufener Frist, die nicht voll bezahlt sind
 }
 
 export type RentLedger = {
   year: number
+  asOf: string | null // Stichtag für Rückstände (heute); null = Jahr gilt als abgelaufen
   rows: RentLedgerRow[]
   totals: {
     sollYearCents: number

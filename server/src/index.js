@@ -138,11 +138,15 @@ app.get('/api/consumption/:year', (req, res) => {
   res.json(consumptionOverview(getDb(), year))
 })
 
-// Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
+// Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr. Rückstände zählen zum
+// heutigen Datum in der Ortszeit des Rechners — Monate, deren Zahlungsfrist noch läuft,
+// sind noch kein Rückstand.
 app.get('/api/rentledger/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(rentLedger(getDb(), year))
+  const d = new Date()
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  res.json(rentLedger(getDb(), year, today))
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss

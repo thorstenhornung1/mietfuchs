@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
+import type { Payment, RentLedger, RentLedgerRow, RentMonth, Tenancy } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
 import Drawer from '../components/Drawer'
@@ -9,6 +9,16 @@ import { useToast, useConfirm } from '../components/feedback'
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
 
 type PaymentForm = { tenancyId: string; date: string; amount: string; note: string }
+
+// Stand je Mietverhältnis. Der Saldo zählt nur Monate, deren Zahlungsfrist abgelaufen ist —
+// im laufenden Jahr ist der Rest des Jahres noch kein Rückstand.
+function saldoBadge(r: RentLedgerRow) {
+  if (r.balanceCents < 0) return <span className="badge red">{fmtEuro(-r.balanceCents)} offen</span>
+  if (r.balanceCents > 0) return <span className="badge green">{fmtEuro(r.balanceCents)} Guthaben</span>
+  if (r.sollYearCents === 0) return null
+  if (r.dueSollCents === 0) return <span className="badge gray">noch nichts fällig</span>
+  return <span className="badge green">{r.dueSollCents < r.sollYearCents ? 'alles Fällige bezahlt' : 'vollständig bezahlt'}</span>
+}
 
 export default function Mietkonto() {
   const { year, setYear } = useYear()
@@ -185,13 +195,7 @@ export default function Mietkonto() {
           <div className="card" key={r.tenancyId}>
             <div className="row" style={{ alignItems: 'baseline' }}>
               <h2 style={{ marginRight: 'auto' }}>{r.tenantName} <span className="muted" style={{ fontWeight: 400 }}>· {r.unitName}</span></h2>
-              {r.balanceCents < 0 ? (
-                <span className="badge red">{fmtEuro(-r.balanceCents)} offen</span>
-              ) : r.balanceCents > 0 ? (
-                <span className="badge green">{fmtEuro(r.balanceCents)} Guthaben</span>
-              ) : !noRent ? (
-                <span className="badge green">vollständig bezahlt</span>
-              ) : null}
+              {saldoBadge(r)}
             </div>
 
             {noRent ? (
@@ -208,7 +212,8 @@ export default function Mietkonto() {
                       <div
                         key={mo.month}
                         className={`rent-month ${cls}`}
-                        title={mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)} · gezahlt ${fmtEuro(mo.paidCents)}`}
+                        title={mo.sollCents === 0 ? 'kein Mietverhältnis'
+                          : `Soll ${fmtEuro(mo.sollCents)} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'upcoming' ? ` · noch nicht fällig, zahlbar bis ${fmtDate(mo.payableBy)}` : ''}`}
                         onClick={() => bookMonth(r.tenancyId, mo)}
                       >
                         <div className="m">{MONTHS[mo.month - 1]}</div>
@@ -219,6 +224,9 @@ export default function Mietkonto() {
                 </div>
                 <p className="muted" style={{ margin: '2px 0 10px' }}>
                   Klick auf einen roten/gelben Monat bucht den offenen Restbetrag vor.
+                  {r.months.some((mo) => mo.status === 'upcoming') && (
+                    <> Graue Monate sind noch kein Rückstand: Die Miete ist bis zum dritten Werktag des Monats zu zahlen (§ 556b Abs. 1 BGB).</>
+                  )}
                 </p>
                 <table>
                   <tbody>
@@ -234,6 +242,12 @@ export default function Mietkonto() {
                       <td><strong>Soll {year} (brutto)</strong></td>
                       <td className="num"><strong>{fmtEuro(r.sollYearCents)}</strong></td>
                     </tr>
+                    {r.dueSollCents < r.sollYearCents && ledger.asOf && (
+                      <tr>
+                        <td>davon fällig (Stand {fmtDate(ledger.asOf)})</td>
+                        <td className="num">{fmtEuro(r.dueSollCents)}</td>
+                      </tr>
+                    )}
                     <tr>
                       <td>eingegangen</td>
                       <td className="num">{fmtEuro(r.paidYearCents)}</td>

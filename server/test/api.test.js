@@ -167,3 +167,33 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
     alt.stop()
   }
 })
+
+test('Mietkonto: die Route rechnet Rückstände zum heutigen Tag', async () => {
+  // Stichtag ist das heutige Datum. Ein Jahr weit in der Zukunft hat deshalb noch keinen
+  // fälligen Monat, ein vergangenes Jahr nur fällige.
+  const unit = await srv.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 70, participates: true }) })
+  const miete = await srv.api('/api/tenancies', {
+    method: 'POST',
+    body: JSON.stringify({
+      unitId: unit.id, tenantName: 'Familie B', start: '2021-01-01', end: null,
+      personHistory: [{ from: '2021-01-01', persons: 1 }],
+      baseRents: [{ from: '2021-01', monthlyCents: 50000 }], prepayments: [], prepaymentOverrides: {},
+    }),
+  })
+
+  const zukunft = await srv.api('/api/rentledger/2099')
+  assert.match(zukunft.asOf, /^\d{4}-\d{2}-\d{2}$/)
+  assert.equal(zukunft.rows[0].sollYearCents, 600000) // 12 × 500 €
+  assert.equal(zukunft.rows[0].dueSollCents, 0)
+  assert.equal(zukunft.rows[0].balanceCents, 0)
+  assert.ok(zukunft.rows[0].months.every((m) => m.status === 'upcoming'))
+  assert.equal(zukunft.totals.openCents, 0)
+
+  const vergangen = await srv.api('/api/rentledger/2021')
+  assert.equal(vergangen.rows[0].dueSollCents, 600000)
+  assert.equal(vergangen.rows[0].openMonths, 12)
+  assert.equal(vergangen.totals.openCents, 600000)
+
+  await srv.api(`/api/tenancies/${miete.id}`, { method: 'DELETE' })
+  await srv.api(`/api/units/${unit.id}`, { method: 'DELETE' })
+})

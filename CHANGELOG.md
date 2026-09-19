@@ -6,6 +6,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Mietkonto zählt nur fällige Mieten als Rückstand.** Im laufenden Jahr galt jeder Monat bis
+  Dezember als offen: Wer bis September pünktlich gezahlt hatte, stand mit drei Monatsmieten im
+  Rückstand, und die Summe „offene Rückstände" enthielt Mieten, die noch gar nicht fällig
+  waren. Ein Monat zählt jetzt erst als Rückstand, wenn seine Zahlungsfrist abgelaufen ist:
+  nach §556b Abs. 1 BGB der dritte Werktag des Monats, Samstage nicht mitgezählt (BGH, Urteil
+  vom 13.07.2010 – VIII ZR 129/09). Bis dahin erscheint der Monat grau. Weil Mietfuchs das
+  Bundesland nicht kennt, verschieben auch Feiertage einzelner Länder die Frist: Ein Rückstand
+  erscheint so nie vor Fristablauf, in manchen Ländern höchstens einen Werktag später.
+  Abgelaufene Jahre und die Steuerübersicht bleiben unverändert. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1).
+
 ## [0.4.0] – 2026-09-19
 
 ### Hinzugefügt
