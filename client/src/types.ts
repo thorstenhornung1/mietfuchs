@@ -176,7 +176,45 @@ export type CostItem = {
   invoiceFile?: string
 }
 
-export type Settings = {
+// ---------- Ort des Hauses ----------
+// Gesetzliche Feiertage regelt jedes Bundesland selbst. In Bayern, Sachsen und Thüringen
+// gelten einzelne Feiertage nur in einem Teil der Gemeinden; dafür gibt es die Fragen in den
+// Stammdaten beim Haus (siehe placeForm.ts).
+
+export type FederalState =
+  | 'BW' | 'BY' | 'BE' | 'BB' | 'HB' | 'HH' | 'HE' | 'MV'
+  | 'NI' | 'NW' | 'RP' | 'SL' | 'SN' | 'ST' | 'SH' | 'TH'
+
+export const FEDERAL_STATES: Record<FederalState, string> = {
+  BW: 'Baden-Württemberg',
+  BY: 'Bayern',
+  BE: 'Berlin',
+  BB: 'Brandenburg',
+  HB: 'Bremen',
+  HH: 'Hamburg',
+  HE: 'Hessen',
+  MV: 'Mecklenburg-Vorpommern',
+  NI: 'Niedersachsen',
+  NW: 'Nordrhein-Westfalen',
+  RP: 'Rheinland-Pfalz',
+  SL: 'Saarland',
+  SN: 'Sachsen',
+  ST: 'Sachsen-Anhalt',
+  SH: 'Schleswig-Holstein',
+  TH: 'Thüringen',
+}
+
+// Ort eines Hauses. null = nicht angegeben bzw. „weiß nicht": Mietfuchs rechnet dann vorsichtig.
+// Heute gibt es genau ein Haus, sein Ort steht deshalb in den Settings. Code, der den Ort
+// braucht, arbeitet nur mit diesem Typ — bei mehreren Objekten hängt er dann am Objekt.
+export type Place = {
+  federalState: FederalState | null // Bundesland
+  assumptionDayHoliday: boolean | null // Bayern: Mariä Himmelfahrt (15.8.) ist in der Gemeinde Feiertag
+  inAugsburg: boolean | null // Bayern: Haus liegt in Augsburg (Friedensfest am 8.8.)
+  corpusChristiHoliday: boolean | null // Sachsen, Thüringen: Fronleichnam ist in der Gemeinde Feiertag
+}
+
+export type Settings = Place & {
   houseName: string
   address: string
   landlordName: string

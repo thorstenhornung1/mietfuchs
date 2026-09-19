@@ -71,6 +71,41 @@ test('Healthcheck: /healthz antwortet als JSON mit Status ok', async () => {
   assert.equal(bericht.checks.uploads.ok, true)
 })
 
+test('Ort des Hauses: anfangs nicht angegeben, über /api/settings speicherbar', async () => {
+  // „Nicht angegeben" ist ein gültiger Zustand und heißt: vorsichtig rechnen. Die Felder müssen
+  // deshalb von Anfang an da sein — auch bei einer db.json aus einer älteren Version.
+  const neu = await srv.api('/api/settings')
+  assert.equal(neu.federalState, null)
+  assert.equal(neu.assumptionDayHoliday, null)
+  assert.equal(neu.inAugsburg, null)
+  assert.equal(neu.corpusChristiHoliday, null)
+
+  const gespeichert = await srv.api('/api/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ federalState: 'BY', assumptionDayHoliday: true, inAugsburg: false, corpusChristiHoliday: null }),
+  })
+  assert.equal(gespeichert.federalState, 'BY')
+  assert.equal(gespeichert.assumptionDayHoliday, true)
+  assert.equal(gespeichert.inAugsburg, false)
+  assert.equal((await srv.api('/api/settings')).federalState, 'BY')
+  await srv.api('/api/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ federalState: null, assumptionDayHoliday: null, inAugsburg: null, corpusChristiHoliday: null }),
+  })
+
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-alt-'))
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ settings: { houseName: 'Altbau' }, units: [], tenancies: [] }))
+  const alt = await startServerIn(dataDir)
+  try {
+    const s = await alt.api('/api/settings')
+    assert.equal(s.houseName, 'Altbau')
+    assert.equal(s.federalState, null)
+    assert.equal(s.corpusChristiHoliday, null)
+  } finally {
+    alt.stop()
+  }
+})
+
 test('Wohnungen: Eigennutzungs-Felder überleben Anlegen und Ändern', async () => {
   const unit = await srv.api('/api/units', {
     method: 'POST',

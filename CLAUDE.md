@@ -64,10 +64,13 @@ Es gibt **keinen Linter**; `npm run build` ist der einzige Typecheck-Pfad (`tsc 
    eigenen Prozess mit `NKA_DATA_DIR` auf einem Wegwerf-Ordner (deshalb gibt es diese
    Variable) und prüft die Routen. Berührt nie eine vorhandene `db.json`.
 3. `client/src/**/*.test.ts(x)` — vitest. Die Entscheidungslogik der Formulare liegt in
-   [client/src/costForm.ts](client/src/costForm.ts) und
-   [client/src/unitForm.ts](client/src/unitForm.ts), damit sie ohne DOM prüfbar ist; die
-   Seiten sollen darüber nur noch rendern. Dazu ein jsdom-Komponententest
-   ([Kosten.test.tsx](client/src/pages/Kosten.test.tsx), fordert die Umgebung per
+   [client/src/costForm.ts](client/src/costForm.ts),
+   [client/src/unitForm.ts](client/src/unitForm.ts) und
+   [client/src/placeForm.ts](client/src/placeForm.ts) (Ort des Hauses in den
+   Stammdaten), damit sie ohne DOM prüfbar ist; die
+   Seiten sollen darüber nur noch rendern. Dazu jsdom-Komponententests
+   ([Kosten.test.tsx](client/src/pages/Kosten.test.tsx),
+   [Stammdaten.test.tsx](client/src/pages/Stammdaten.test.tsx), fordern die Umgebung per
    `@vitest-environment jsdom` selbst an) für die eine Eigenschaft, die reine Logik nicht
    sieht: **der angezeigte Wert eines Auswahlfelds muss dem gespeicherten entsprechen.** Steht
    der State-Wert nicht in der Optionsliste, zeigt der Browser den ersten Eintrag, ohne ein

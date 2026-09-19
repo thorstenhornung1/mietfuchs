@@ -6,6 +6,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Ort des Hauses in den Stammdaten.** Gesetzliche Feiertage regelt jedes Bundesland selbst,
+  einige gelten nur in einem Teil der Gemeinden. In den Stammdaten lässt sich beim Haus jetzt
+  das Bundesland angeben. Wo es darauf ankommt, fragt Mietfuchs nach, statt Kürzel zu
+  verlangen: in Bayern, ob Mariä Himmelfahrt in der Gemeinde Feiertag ist und ob das Haus in
+  Augsburg liegt, in Sachsen und Thüringen, ob Fronleichnam Feiertag ist. „Weiß nicht" ist
+  eine gültige Antwort. Die Angaben sind die Grundlage für Fristen, die nach Werktagen zählen.
+  Beitrag von [@thorstenhornung1](https://github.com/thorstenhornung1).
+
 ### Behoben
 
 - **Mietkonto zählt nur fällige Mieten als Rückstand.** Im laufenden Jahr galt jeder Monat bis

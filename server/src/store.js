@@ -25,6 +25,14 @@ const DEFAULT_DB = {
     landlordName: '',
     iban: '',
     paymentDeadlineDays: 30,
+    // Ort des Hauses: Gesetzliche Feiertage sind Ländersache, einige gelten nur in einem Teil
+    // der Gemeinden. null heißt „nicht angegeben" bzw. „weiß nicht" — dann rechnet Mietfuchs
+    // vorsichtig. Es gibt genau ein Haus, sein Ort steht deshalb hier; das Datenmodell steht in
+    // client/src/types.ts (Place).
+    federalState: null,
+    assumptionDayHoliday: null,
+    inAugsburg: null,
+    corpusChristiHoliday: null,
     ollamaUrl: 'http://localhost:11434',
     ollamaModel: 'qwen3.6-35b',
   },

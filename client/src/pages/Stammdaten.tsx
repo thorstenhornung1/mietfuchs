@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { DepositStatus, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
-import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
+import type { DepositStatus, FederalState, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
+import { DEPOSIT_STATUS_LABELS, FEDERAL_STATES, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
+import { ANSWER_LABELS, EMPTY_PLACE_FORM, buildPlaceBody, placeQuestions, placeToForm, setAnswer, type Answer } from '../placeForm'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -43,17 +44,20 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
   const toast = useToast()
   const confirm = useConfirm()
   const [house, setHouse] = useState({ houseName: '', address: '' })
+  const [place, setPlace] = useState(EMPTY_PLACE_FORM)
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (settings) setHouse({ houseName: settings.houseName, address: settings.address })
+    if (!settings) return
+    setHouse({ houseName: settings.houseName, address: settings.address })
+    setPlace(placeToForm(settings))
   }, [settings])
 
   async function saveHouse() {
-    await api('/api/settings', { method: 'PUT', body: JSON.stringify(house) })
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...house, ...buildPlaceBody(place) }) })
     await reload()
     toast('Hausdaten gespeichert.')
   }
@@ -194,16 +198,58 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
 
       <div className="card">
         <h2>Haus</h2>
-        <div className="row">
-          <label className="field grow">
-            Bezeichnung
-            <input value={house.houseName} onChange={(e) => setHouse({ ...house, houseName: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
-          </label>
-          <label className="field grow">
-            Adresse
-            <input value={house.address} onChange={(e) => setHouse({ ...house, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
-          </label>
-          <button className="btn" onClick={saveHouse}>Speichern</button>
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div className="row">
+            <label className="field grow">
+              Bezeichnung
+              <input value={house.houseName} onChange={(e) => setHouse({ ...house, houseName: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
+            </label>
+            <label className="field grow">
+              Adresse
+              <input value={house.address} onChange={(e) => setHouse({ ...house, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
+            </label>
+          </div>
+          <div>
+            <label className="field">
+              Bundesland
+              <select
+                value={place.federalState}
+                onChange={(e) => setPlace({ ...place, federalState: e.target.value as FederalState | '' })}
+                style={{ width: 240 }}
+              >
+                <option value="">nicht angegeben</option>
+                {Object.entries(FEDERAL_STATES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+              </select>
+            </label>
+            <p className="muted" style={{ margin: '6px 0 0' }}>
+              Gesetzliche Feiertage regelt jedes Bundesland selbst, einige gelten nur in einem Teil
+              der Gemeinden. Die Angabe ist die Grundlage für Fristen, die nach Werktagen zählen.
+            </p>
+          </div>
+          {placeQuestions(place).map((q) => (
+            <div key={q.key}>
+              <label className="field">
+                {q.question}
+                <select
+                  value={place[q.key]}
+                  disabled={q.disabled}
+                  onChange={(e) => setPlace(setAnswer(place, q.key, e.target.value as Answer))}
+                  style={{ width: 160 }}
+                >
+                  {(Object.keys(ANSWER_LABELS) as Answer[]).map((a) => <option key={a} value={a}>{ANSWER_LABELS[a]}</option>)}
+                </select>
+              </label>
+              <p className="muted" style={{ margin: '6px 0 0' }}>
+                {q.disabled ? 'In Augsburg ist Mariä Himmelfahrt Feiertag.' : q.hint}
+                {!q.disabled && q.source && (
+                  <> <a href={q.source.href} target="_blank" rel="noreferrer">{q.source.label}</a></>
+                )}
+              </p>
+            </div>
+          ))}
+          <div className="row">
+            <button className="btn" onClick={saveHouse}>Speichern</button>
+          </div>
         </div>
       </div>
 
