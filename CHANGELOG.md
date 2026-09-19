@@ -13,8 +13,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   das Bundesland angeben. Wo es darauf ankommt, fragt Mietfuchs nach, statt Kürzel zu
   verlangen: in Bayern, ob Mariä Himmelfahrt in der Gemeinde Feiertag ist und ob das Haus in
   Augsburg liegt, in Sachsen und Thüringen, ob Fronleichnam Feiertag ist. „Weiß nicht" ist
-  eine gültige Antwort. Die Angaben sind die Grundlage für Fristen, die nach Werktagen zählen.
-  Beitrag von [@thorstenhornung1](https://github.com/thorstenhornung1).
+  eine gültige Antwort. Danach richtet sich die Zahlungsfrist der Miete im Mietkonto: Mit
+  Angabe zählen nur die Feiertage am Ort des Hauses. Ohne Angabe oder bei „Weiß nicht" zählt
+  jeder Feiertag, der in Frage kommt, wie bisher. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1).
 - **Gesetzliche Feiertage aller Bundesländer** als Grundlage für Fristen, einschließlich der
   Feiertage, die nur in einem Teil der Gemeinden gelten. Die Daten stammen aus der Bibliothek
   [date-holidays](https://github.com/commenthol/date-holidays) und sind für 1995 bis 2100 gegen
@@ -28,11 +30,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Rückstand, und die Summe „offene Rückstände" enthielt Mieten, die noch gar nicht fällig
   waren. Ein Monat zählt jetzt erst als Rückstand, wenn seine Zahlungsfrist abgelaufen ist:
   nach §556b Abs. 1 BGB der dritte Werktag des Monats, Samstage nicht mitgezählt (BGH, Urteil
-  vom 13.07.2010 – VIII ZR 129/09). Bis dahin erscheint der Monat grau. Weil Mietfuchs das
-  Bundesland nicht kennt, verschieben auch Feiertage einzelner Länder die Frist: Ein Rückstand
-  erscheint so nie vor Fristablauf, in manchen Ländern höchstens einen Werktag später.
-  Abgelaufene Jahre und die Steuerübersicht bleiben unverändert. Beitrag von
-  [@thorstenhornung1](https://github.com/thorstenhornung1).
+  vom 13.07.2010 – VIII ZR 129/09). Bis dahin erscheint der Monat grau. Welche Feiertage die
+  Frist verschieben, richtet sich nach dem Ort des Hauses in den Stammdaten. Fehlt die
+  Angabe, zählen die Feiertage aller Länder: Ein Rückstand erscheint so nie vor Fristablauf, in
+  manchen Ländern höchstens einen Werktag später. Abgelaufene Jahre und die Steuerübersicht
+  bleiben unverändert. Beitrag von [@thorstenhornung1](https://github.com/thorstenhornung1).
 
 ## [0.4.0] – 2026-09-19
 

@@ -203,7 +203,7 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
   }
 })
 
-test('Mietkonto: die Route rechnet Rückstände zum heutigen Tag', async () => {
+test('Mietkonto: die Route rechnet Rückstände zum heutigen Tag und nach dem Ort des Hauses', async () => {
   // Stichtag ist das heutige Datum. Ein Jahr weit in der Zukunft hat deshalb noch keinen
   // fälligen Monat, ein vergangenes Jahr nur fällige.
   const unit = await srv.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 70, participates: true }) })
@@ -228,6 +228,24 @@ test('Mietkonto: die Route rechnet Rückstände zum heutigen Tag', async () => {
   assert.equal(vergangen.rows[0].dueSollCents, 600000)
   assert.equal(vergangen.rows[0].openMonths, 12)
   assert.equal(vergangen.totals.openCents, 600000)
+
+  // Die Zahlungsfrist folgt dem Ort des Hauses aus den Einstellungen. Juni 2021: Di 1., Mi 2.,
+  // Do 3. Fronleichnam — in Sachsen nur in einigen Gemeinden Feiertag.
+  const juni2021 = async () => (await srv.api('/api/rentledger/2021')).rows[0].months[5].payableBy
+  assert.equal(await juni2021(), '2021-06-04') // ohne Angabe zählt Fronleichnam mit
+  const ort = (angaben) => srv.api('/api/settings', { method: 'PUT', body: JSON.stringify(angaben) })
+  await ort({ federalState: 'SN', corpusChristiHoliday: false })
+  assert.equal(await juni2021(), '2021-06-03')
+  await ort({ federalState: 'SN', corpusChristiHoliday: null })
+  assert.equal(await juni2021(), '2021-06-04') // weiß nicht: vorsichtig
+  assert.equal((await srv.api('/api/rentledger/2021')).place.federalState, 'SN')
+  // Ein ungültiges Kürzel (über die API gespeichert) gilt als „nicht angegeben" — in der
+  // Rechnung und im Ergebnis, das die Oberfläche für ihren Hinweis nutzt.
+  await ort({ federalState: 'XX', corpusChristiHoliday: false })
+  const ungueltig = await srv.api('/api/rentledger/2021')
+  assert.equal(ungueltig.rows[0].months[5].payableBy, '2021-06-04')
+  assert.equal(ungueltig.place.federalState, null)
+  await ort({ federalState: null, corpusChristiHoliday: null })
 
   await srv.api(`/api/tenancies/${miete.id}`, { method: 'DELETE' })
   await srv.api(`/api/units/${unit.id}`, { method: 'DELETE' })

@@ -120,6 +120,7 @@ export type RentLedgerRow = {
 export type RentLedger = {
   year: number
   asOf: string | null // Stichtag für Rückstände (heute); null = Jahr gilt als abgelaufen
+  place: Place // Ort, nach dem die Zahlungsfristen gerechnet sind (ungültige Angaben als null)
   rows: RentLedgerRow[]
   totals: {
     sollYearCents: number

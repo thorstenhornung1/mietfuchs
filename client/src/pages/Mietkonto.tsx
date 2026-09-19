@@ -225,7 +225,10 @@ export default function Mietkonto() {
                 <p className="muted" style={{ margin: '2px 0 10px' }}>
                   Klick auf einen roten/gelben Monat bucht den offenen Restbetrag vor.
                   {r.months.some((mo) => mo.status === 'upcoming') && (
-                    <> Graue Monate sind noch kein Rückstand: Die Miete ist bis zum dritten Werktag des Monats zu zahlen (§ 556b Abs. 1 BGB).</>
+                    <>
+                      {' '}Graue Monate sind noch kein Rückstand: Die Miete ist bis zum dritten Werktag des Monats zu zahlen (§ 556b Abs. 1 BGB).
+                      {!ledger.place.federalState && ' Weil das Bundesland in den Stammdaten fehlt, zählen dabei die Feiertage aller Länder.'}
+                    </>
                   )}
                 </p>
                 <table>

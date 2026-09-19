@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
+import { placeOf } from './place.js'
 import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.js'
 import { healthReport } from './health.js'
 
@@ -140,13 +141,13 @@ app.get('/api/consumption/:year', (req, res) => {
 
 // Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr. Rückstände zählen zum
 // heutigen Datum in der Ortszeit des Rechners — Monate, deren Zahlungsfrist noch läuft,
-// sind noch kein Rückstand.
+// sind noch kein Rückstand. Die Frist richtet sich nach dem Ort des Hauses.
 app.get('/api/rentledger/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const d = new Date()
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  res.json(rentLedger(getDb(), year, today))
+  res.json(rentLedger(getDb(), year, today, placeOf(getDb().settings)))
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss

@@ -1,5 +1,8 @@
 // Berechnungs-Engine für die Nebenkostenabrechnung.
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
+import { rentPayableBy } from './fristen.js'
+import { holidayCalendar } from './holidays.js'
+import { placeOf } from './place.js'
 
 export const KEY_LABELS = {
   area: 'Wohnfläche',
@@ -164,74 +167,26 @@ function rateAtMonth(schedule, firstMonth) {
   return rate
 }
 
-// Feiertage, die auf einen der ersten drei Werktage eines Monats fallen können. Mietfuchs kennt
-// das Bundesland nicht. Damit ein Rückstand nie zu früh erscheint, zählen auch Feiertage, die
-// nur in einzelnen Ländern gelten, überall: Dort, wo sie nicht gelten, erscheint ein Rückstand
-// höchstens einen Werktag später. Die übrigen Feiertage (Frauentag, Mariä Himmelfahrt,
-// Weltkindertag, Reformationstag, Buß- und Bettag, Weihnachten) liegen nie so früh im Monat.
-function holidaysEarlyInMonth(year) {
-  // Ostersonntag im gregorianischen Kalender nach Meeus/Jones/Butcher
-  // („Anonymous Gregorian algorithm"), Bezeichner wie in der Vorlage
-  const a = year % 19
-  const b = Math.floor(year / 100)
-  const c = year % 100
-  const d = Math.floor(b / 4)
-  const e = b % 4
-  const f = Math.floor((b + 8) / 25)
-  const g = Math.floor((b - f + 1) / 3)
-  const h = (19 * a + b - d - g + 15) % 30
-  const i = Math.floor(c / 4)
-  const k = c % 4
-  const l = (32 + 2 * e + 2 * i - h - k) % 7
-  const m = Math.floor((a + 11 * h + 22 * l) / 451)
-  const n = h + l - 7 * m + 114
-  const easter = Date.UTC(year, Math.floor(n / 31) - 1, (n % 31) + 1)
-  const afterEaster = (days) => new Date(easter + days * MS_DAY).toISOString().slice(0, 10)
-  return new Set([
-    `${year}-01-01`, // Neujahr
-    `${year}-01-06`, // Heilige Drei Könige (BW, BY, ST)
-    afterEaster(-2), // Karfreitag
-    afterEaster(1), // Ostermontag
-    `${year}-05-01`, // Tag der Arbeit
-    afterEaster(39), // Christi Himmelfahrt
-    afterEaster(50), // Pfingstmontag
-    afterEaster(60), // Fronleichnam (BW, BY, HE, NW, RP, SL, teils SN und TH)
-    `${year}-10-03`, // Tag der Deutschen Einheit
-    `${year}-11-01`, // Allerheiligen (BW, BY, NW, RP, SL)
-  ])
-}
-
-// Letzter Tag, an dem die Miete eines Monats noch pünktlich gezahlt ist: der dritte Werktag
-// (§ 556b Abs. 1 BGB). Samstage zählen dabei nicht mit (BGH, Urteil vom 13.07.2010 –
-// VIII ZR 129/09), Sonn- und Feiertage ohnehin nicht. `month`: 1–12. Pünktlich ist auch eine
-// Überweisung, die bis zu diesem Tag beauftragt wurde und erst danach eingeht (BGH, Urteil vom
-// 05.10.2016 – VIII ZR 222/15).
-export function rentPayableBy(year, month) {
-  const holidays = holidaysEarlyInMonth(year)
-  let workdays = 0
-  for (let day = 1; ; day++) {
-    const date = new Date(Date.UTC(year, month - 1, day))
-    const iso = date.toISOString().slice(0, 10)
-    const weekday = date.getUTCDay() // 0 = Sonntag, 6 = Samstag
-    if (weekday === 0 || weekday === 6 || holidays.has(iso)) continue
-    if (++workdays === 3) return iso
-  }
-}
-
 // Monats-Mietkonto eines Jahres: pro Mietverhältnis Soll (Bruttomiete = Kaltmiete +
 // Vorauszahlung) je Monat, sowie die tatsächlich eingegangenen Zahlungen des Jahres.
 // Zahlungen werden den Monaten in Reihenfolge (Jan → Dez) zugeteilt: so spiegelt der
 // Status („bezahlt / teilweise / offen") wider, bis zu welchem Monat das Konto gedeckt ist.
 // `asOf` (ISO-Datum, Stichtag): Ein unbezahlter Monat ist erst ein Rückstand, wenn seine
-// Zahlungsfrist (rentPayableBy) vor dem Stichtag abgelaufen ist; bis dahin heißt er
+// Zahlungsfrist (rentPayableBy, fristen.js) vor dem Stichtag abgelaufen ist; bis dahin heißt er
 // „upcoming". Ohne Stichtag gilt das Jahr als abgelaufen — so rechnet die Steuerübersicht,
 // die nur die Jahressummen braucht.
-export function rentLedger(db, year, asOf = null) {
+// `place` (Ort des Hauses, siehe place.js) bestimmt, welche Feiertage die Frist verschieben.
+// Fehlt eine Angabe, zählt jeder Feiertag, der in Frage kommt: Ein Rückstand erscheint dann nie
+// zu früh, sondern höchstens einen Werktag zu spät. Das Ergebnis nennt den Ort, mit dem
+// gerechnet wurde, damit die Oberfläche dieselbe Normalisierung sieht.
+export function rentLedger(db, year, asOf = null, place = null) {
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
   const unitById = new Map(db.units.map((u) => [u.id, u]))
   const payments = db.payments ?? []
-  const payableBy = Array.from({ length: 12 }, (_, i) => rentPayableBy(year, i + 1))
+  const where = placeOf(place)
+  const isHoliday = holidayCalendar(where, { uncertain: 'include' })
+  const payableBy = Array.from({ length: 12 }, (_, i) => rentPayableBy(year, i + 1, isHoliday))
   const overdue = (month) => asOf == null || asOf > payableBy[month - 1]
 
   const rows = (db.tenancies ?? [])
@@ -301,6 +256,7 @@ export function rentLedger(db, year, asOf = null) {
   return {
     year,
     asOf,
+    place: where,
     rows,
     totals: {
       sollYearCents: rows.reduce((a, r) => a + r.sollYearCents, 0),

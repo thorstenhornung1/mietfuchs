@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import {
   computeSettlement,
   computePrepaymentCents,
@@ -9,9 +10,9 @@ import {
   daysInYear,
   personDaysInPeriod,
   rentLedger,
-  rentPayableBy,
   taxReport,
 } from '../src/calc.js'
+import { rentPayableBy } from '../src/fristen.js'
 
 // Beispielhaus für die Tests: 3 Wohnungen, davon eine selbstgenutzt und zwei vermietet.
 // Die selbstgenutzte Wohnung ist hier ohne Eigennutzungs-Kennzeichen angelegt (Altbestand) —
@@ -402,46 +403,84 @@ test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () 
 })
 
 // ---------- Mietkonto: Zahlungsfrist nach § 556b Abs. 1 BGB ----------
-// Die Miete ist spätestens am dritten Werktag des Monats zu zahlen. Samstage zählen dabei nicht
-// mit (BGH, Urteil vom 13.07.2010 – VIII ZR 129/09), Sonn- und Feiertage ohnehin nicht. Erst
-// wenn diese Frist abgelaufen ist, ist ein unbezahlter Monat ein Rückstand. Die erwarteten Tage
-// sind von Hand am Kalender abgezählt; die Osterdaten stammen aus dem Kirchenkalender.
+// Die Miete ist spätestens am dritten Werktag des Monats zu zahlen (Regel und Handfälle in
+// fristen.test.js). Erst wenn diese Frist abgelaufen ist, ist ein unbezahlter Monat ein
+// Rückstand. Welche Feiertage die Frist verschieben, hängt vom Ort des Hauses ab.
 
-test('Zahlungsfrist: dritter Werktag, Samstage, Sonn- und Feiertage zählen nicht mit', () => {
-  const faelle = [
-    // [Jahr, Monat, letzter pünktlicher Zahltag, Herleitung]
-    [2026, 2, '2026-02-04', 'So 1. · Mo 2. (1) · Di 3. (2) · Mi 4. (3)'],
-    [2026, 9, '2026-09-03', 'Di 1. (1) · Mi 2. (2) · Do 3. (3)'],
-    [2026, 8, '2026-08-05', 'Sa 1. zählt nicht · So 2. · Mo 3. (1) · Di 4. (2) · Mi 5. (3)'],
-    [2027, 7, '2027-07-05', 'Do 1. (1) · Fr 2. (2) · Sa 3. zählt nicht · So 4. · Mo 5. (3)'],
-    [2026, 5, '2026-05-06', 'Fr 1. Tag der Arbeit · Sa 2. · So 3. · Mo 4. (1) · Di 5. (2) · Mi 6. (3)'],
-    [2025, 10, '2025-10-06', 'Mi 1. (1) · Do 2. (2) · Fr 3. Tag der Deutschen Einheit · Mo 6. (3)'],
-    // Ostern 2026 am 5. April: Karfreitag 3. April, Ostermontag 6. April
-    [2026, 4, '2026-04-07', 'Mi 1. (1) · Do 2. (2) · Fr 3. Karfreitag · Mo 6. Ostermontag · Di 7. (3)'],
-    // Ostern 2024 am 31. März: Ostermontag 1. April
-    [2024, 4, '2024-04-04', 'Mo 1. Ostermontag · Di 2. (1) · Mi 3. (2) · Do 4. (3)'],
-    // Ostern 2011 am 24. April: Christi Himmelfahrt 2. Juni (39 Tage nach Ostern)
-    [2011, 6, '2011-06-06', 'Mi 1. (1) · Do 2. Christi Himmelfahrt · Fr 3. (2) · Mo 6. (3)'],
-    // Ostern 2020 am 12. April: Pfingstmontag 1. Juni (50 Tage nach Ostern)
-    [2020, 6, '2020-06-04', 'Mo 1. Pfingstmontag · Di 2. (1) · Mi 3. (2) · Do 4. (3)'],
-  ]
-  for (const [jahr, monat, erwartet, herleitung] of faelle) {
-    assert.equal(rentPayableBy(jahr, monat), erwartet, `${monat}/${jahr}: ${herleitung}`)
+// Miete 500 € seit 1995, keine Zahlungen. Den Ort bekommt rentLedger ausdrücklich übergeben
+// (die Route liest ihn mit placeOf aus den Settings); in den Settings steht hier absichtlich
+// ein anderes Land, das nicht zählen darf.
+function mietkontoSeit1995() {
+  return {
+    settings: { federalState: 'BW' },
+    units: [{ id: 'u1', name: 'OG', areaM2: 70, participates: true }],
+    tenancies: [
+      {
+        id: 't1', unitId: 'u1', tenantName: 'Familie B', start: '1995-01-01', end: null,
+        personHistory: [{ from: '1995-01-01', persons: 1 }],
+        baseRents: [{ from: '1995-01', monthlyCents: 50000 }],
+        prepayments: [],
+      },
+    ],
+    payments: [],
+  }
+}
+const frist = (ort, jahr, monat) => rentLedger(mietkontoSeit1995(), jahr, null, ort).rows[0].months[monat - 1].payableBy
+
+test('Mietkonto: Die Zahlungsfrist folgt dem übergebenen Ort des Hauses', () => {
+  // Januar 2026: Do 1. Neujahr · Fr 2. (1) · Mo 5. (2) · Di 6. Heilige Drei Könige, Feiertag
+  // nur in Baden-Württemberg, Bayern und Sachsen-Anhalt · Mi 7.
+  assert.equal(frist({}, 2026, 1), '2026-01-07', 'ohne Angabe zählt der 6. Januar mit')
+  assert.equal(frist({ federalState: 'BY' }, 2026, 1), '2026-01-07')
+  assert.equal(frist({ federalState: 'NW' }, 2026, 1), '2026-01-06')
+  assert.equal(frist({ federalState: 'BE' }, 2026, 1), '2026-01-06')
+  // Juni 2021: Di 1. (1) · Mi 2. (2) · Do 3. Fronleichnam · Fr 4.
+  assert.equal(frist({ federalState: 'NW' }, 2021, 6), '2021-06-04')
+  assert.equal(frist({ federalState: 'BE' }, 2021, 6), '2021-06-03')
+  // Sachsen: Fronleichnam gilt nur in einigen Gemeinden. „Weiß nicht" rechnet vorsichtig.
+  assert.equal(frist({ federalState: 'SN', corpusChristiHoliday: true }, 2021, 6), '2021-06-04')
+  assert.equal(frist({ federalState: 'SN', corpusChristiHoliday: false }, 2021, 6), '2021-06-03')
+  assert.equal(frist({ federalState: 'SN', corpusChristiHoliday: null }, 2021, 6), '2021-06-04')
+  // November 2027: Mo 1. Allerheiligen, Feiertag in BW, BY, NW, RP und SL · Di 2. · Mi 3. · Do 4.
+  assert.equal(frist({ federalState: 'RP' }, 2027, 11), '2027-11-04')
+  assert.equal(frist({ federalState: 'HE' }, 2027, 11), '2027-11-03')
+})
+
+test('Mietkonto: Rückstand ab dem Tag nach der Frist, die am Ort des Hauses gilt', () => {
+  // Juni 2021 nicht bezahlt, Stichtag Freitag, 4. Juni
+  const stand = (ort) => rentLedger(mietkontoSeit1995(), 2021, '2021-06-04', ort).rows[0].months[5].status
+  assert.equal(stand({ federalState: 'SN', corpusChristiHoliday: false }), 'open') // Frist 3.6. abgelaufen
+  assert.equal(stand({ federalState: 'SN', corpusChristiHoliday: null }), 'upcoming') // Frist 4.6. läuft noch
+  assert.equal(stand({ federalState: 'SN', corpusChristiHoliday: true }), 'upcoming')
+})
+
+test('Mietkonto ohne Ortsangabe: jede Frist von 1995 bis 2100 wie bisher', () => {
+  // Bisher zählten überall Neujahr, Karfreitag, Ostermontag, 1. Mai, Himmelfahrt, Pfingstmontag
+  // und 3. Oktober, dazu die Landesfeiertage 6. Januar, Fronleichnam und 1. November. Alle
+  // übrigen Landesfeiertage liegen nie so früh im Monat. Ohne Angabe des Orts darf sich deshalb
+  // keine Frist verschieben. Osterdaten aus der Referenz der Feiertagstests (dateutil.easter).
+  const referenz = JSON.parse(fs.readFileSync(new URL('./fixtures/holidays/python-holidays.json', import.meta.url), 'utf8'))
+  const [erstes, letztes] = referenz.jahre
+  for (let y = erstes; y <= letztes; y++) {
+    const ostern = Date.parse(referenz.ostern[y - erstes])
+    const nachOstern = (n) => new Date(ostern + n * 86400000).toISOString().slice(0, 10)
+    const bisher = new Set([
+      `${y}-01-01`, `${y}-01-06`, nachOstern(-2), nachOstern(1), `${y}-05-01`,
+      nachOstern(39), nachOstern(50), nachOstern(60), `${y}-10-03`, `${y}-11-01`,
+    ])
+    const erwartet = Array.from({ length: 12 }, (_, i) => rentPayableBy(y, i + 1, (d) => bisher.has(d)))
+    assert.deepEqual(rentLedger(mietkontoSeit1995(), y, null, null).rows[0].months.map((m) => m.payableBy), erwartet, String(y))
   }
 })
 
-test('Zahlungsfrist: Feiertage einzelner Länder zählen überall, ein Rückstand erscheint nie zu früh', () => {
-  // Mietfuchs kennt das Bundesland nicht. Gilt ein Feiertag nur in einigen Ländern, verschiebt
-  // er die Frist trotzdem — in den übrigen Ländern erscheint ein Rückstand dann einen Tag später.
-  const faelle = [
-    [2026, 1, '2026-01-07', 'Do 1. Neujahr · Fr 2. (1) · Mo 5. (2) · Di 6. Heilige Drei Könige · Mi 7. (3)'],
-    // Ostern 2021 am 4. April: Fronleichnam 3. Juni (60 Tage nach Ostern)
-    [2021, 6, '2021-06-04', 'Di 1. (1) · Mi 2. (2) · Do 3. Fronleichnam · Fr 4. (3)'],
-    [2027, 11, '2027-11-04', 'Mo 1. Allerheiligen · Di 2. (1) · Mi 3. (2) · Do 4. (3)'],
-  ]
-  for (const [jahr, monat, erwartet, herleitung] of faelle) {
-    assert.equal(rentPayableBy(jahr, monat), erwartet, `${monat}/${jahr}: ${herleitung}`)
-  }
+test('Mietkonto: Das Ergebnis nennt den Ort, mit dem die Fristen gerechnet sind', () => {
+  // Die Oberfläche erklärt damit, warum eine Frist später liegt — und nutzt dieselbe
+  // Normalisierung wie die Rechnung: Ein ungültiges Kürzel gilt als „nicht angegeben".
+  const unbekannt = { federalState: null, assumptionDayHoliday: null, inAugsburg: null, corpusChristiHoliday: null }
+  assert.deepEqual(rentLedger(mietkontoSeit1995(), 2026, null, { federalState: 'SN', corpusChristiHoliday: false }).place,
+    { ...unbekannt, federalState: 'SN', corpusChristiHoliday: false })
+  assert.deepEqual(rentLedger(mietkontoSeit1995(), 2026, null, { federalState: 'XX' }).place, unbekannt)
+  assert.deepEqual(rentLedger(mietkontoSeit1995(), 2026).place, unbekannt) // so ruft taxReport auf
 })
 
 // Laufendes Jahr 2026: Bruttomiete 1.000 € (800 € Kaltmiete + 200 € Vorauszahlung) ab Januar.

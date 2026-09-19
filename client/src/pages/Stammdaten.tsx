@@ -223,7 +223,9 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             </label>
             <p className="muted" style={{ margin: '6px 0 0' }}>
               Gesetzliche Feiertage regelt jedes Bundesland selbst, einige gelten nur in einem Teil
-              der Gemeinden. Die Angabe ist die Grundlage für Fristen, die nach Werktagen zählen.
+              der Gemeinden. Danach richtet sich die Zahlungsfrist der Miete im Mietkonto. Fehlt
+              eine Angabe oder steht „Weiß nicht", zählt jeder Feiertag, der in Frage kommt: Ein
+              Rückstand erscheint dann nie zu früh, höchstens einen Werktag zu spät.
             </p>
           </div>
           {placeQuestions(place).map((q) => (

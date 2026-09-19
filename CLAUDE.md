@@ -157,9 +157,14 @@ die ganze fachliche Komplexität:
 - **Mietkonto** (`rentLedger`): Kaltmiete-Staffel (`baseRents`) + Vorauszahlung ergeben das
   monatliche Soll (Bruttomiete); Zahlungseingänge (`payments`) werden Jan→Dez FIFO auf die
   Monate verteilt (Status bezahlt/teilweise/offen). Rückstand ist ein Monat erst nach seiner
-  Zahlungsfrist (`rentPayableBy`: dritter Werktag, §556b Abs. 1 BGB, ohne Samstage) zum
-  Stichtag `asOf`, den die Route auf heute setzt; davor heißt er `upcoming`. Ohne Stichtag
-  gilt das Jahr als abgelaufen (so ruft `taxReport` das Mietkonto auf).
+  Zahlungsfrist (`rentPayableBy` in fristen.js: dritter Werktag, §556b Abs. 1 BGB, ohne
+  Samstage) zum Stichtag `asOf`, den die Route auf heute setzt; davor heißt er `upcoming`.
+  Ohne Stichtag gilt das Jahr als abgelaufen (so ruft `taxReport` das Mietkonto auf). Die
+  Feiertage kommen aus holidays.js nach dem Ort `place`, den die Route mit
+  `placeOf(settings)` übergibt ([server/src/place.js](server/src/place.js), die einzige Stelle,
+  die weiß, dass der Ort heute in den Settings steht). Bei fehlender Angabe gilt
+  `uncertain: 'include'`: Ein Rückstand erscheint nie zu früh. Das Ergebnis nennt den
+  verwendeten Ort (`place`), die Mietkonto-Seite erklärt damit fehlende Angaben.
 - **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (aus `rentLedger`, Soll + Ist) und
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,
   vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester
@@ -170,6 +175,13 @@ Datenmodells steht in [client/src/types.ts](client/src/types.ts) (Unit, Tenancy,
 Reading, CostItem, Settings, Settlement …). Server und Client müssen hier konsistent bleiben.
 Die `KEY_LABELS` existieren bewusst doppelt (calc.js liefert UI-Strings im Settlement, types.ts
 hat eigene Labels für die Eingabe-Oberfläche).
+
+**Fristen** ([server/src/fristen.js](server/src/fristen.js)): reine Funktionen ohne Uhr und
+Datenzugriff, Datum hinein, Datum heraus. Feiertage bekommen sie als Prädikat
+`isHoliday(iso)` vom Aufrufer (aus `holidayCalendar` in holidays.js); damit entscheidet der
+Aufrufer auch die vorsichtige Richtung. Enthalten: Zahlungsfrist der Miete (§ 556b Abs. 1 BGB)
+und das Verschieben eines Fristendes auf den nächsten Werktag (§ 193 BGB). Die Tests geben
+Feiertage von Hand vor und prüfen so die Fristregel unabhängig vom Kalender.
 
 **Feiertage** ([server/src/holidays.js](server/src/holidays.js)): dünner Adapter um die
 Bibliothek `date-holidays` (exakt gepinnt, Daten unter CC BY-SA 3.0, Nennung in der README).
