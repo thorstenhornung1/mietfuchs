@@ -5653,3 +5653,186 @@ Erweiterter Server:       Reverse Proxy → Mietfuchs Web → PostgreSQL ← Mie
 
 > Mietfuchs ist eine datenbankgestützte Anwendung mit SQLite als Zero-Config-Local-Backend und PostgreSQL als Referenzbackend für Server und Cluster; JSON bleibt das portable Legacy-/Austauschformat, externe Dienste bleiben optionale Adapter.
 
+---
+
+# 272. Addendum: § 35a EStG – Verteilung und Rundung von Lohnkosten
+
+**Stand:** 19.09.2026 · Status: fachliche Entscheidung. Schließt den offenen Punkt B4 aus
+`docs/settlement-baseline-befunde.md`. Umsetzung upstream nach B2 (deterministischer
+Tie-Break, §56, §271.26).
+
+## 272.1 Zweck
+
+Enthält eine Kostenposition einen für § 35a EStG relevanten Lohnkostenanteil, wird der auf
+die Mietverhältnisse entfallende Betrag aus deren Anteil an der zugrunde liegenden
+Kostenposition abgeleitet.
+
+Die Verteilung muss sicherstellen, dass
+
+- insgesamt nie mehr Lohnkosten bescheinigt werden, als die Rechnung enthält,
+- die für die Mietverhältnisse bestimmte Gesamtsumme centgenau erhalten bleibt,
+- kein negativer Betrag entsteht,
+- keinem Mietverhältnis mehr §-35a-Lohnkosten zugeordnet werden, als Kosten auf dieses
+  Mietverhältnis entfallen,
+- das Ergebnis unabhängig von der Eingabereihenfolge ist und
+- die eigentliche Kostenverteilung unverändert bleibt.
+
+## 272.2 Gesamter Lohnkostenanteil der Mietverhältnisse
+
+Für jede Kostenposition wird zunächst der exakte Lohnkostenbetrag berechnet, der auf
+sämtliche Mietverhältnisse entfällt:
+
+```text
+MieterLohnExakt = Lohnanteil × MieterKostenGesamt / Rechnungsbetrag
+```
+
+Dabei gilt:
+
+- **Lohnanteil** ist der in der Rechnung enthaltene Lohnkostenanteil,
+- **MieterKostenGesamt** ist die Summe der auf Mietverhältnisse verteilten Kosten — in
+  ganzen Cent, also nach Abschluss der Kostenverteilung, und nur die Anteile, die einem
+  Mietverhältnis tatsächlich zugeordnet wurden,
+- **Rechnungsbetrag** ist der Gesamtbetrag der Rechnung.
+
+Der daraus resultierende Gesamtbetrag für die Mietverhältnisse wird **kaufmännisch** auf den
+nächstliegenden Cent gerundet:
+
+- Bruchteile von weniger als 0,5 Cent werden abgerundet,
+- Bruchteile ab 0,5 Cent werden aufgerundet.
+
+```text
+MieterLohnGesamt = min(Lohnanteil, kaufmännisch_gerundet(MieterLohnExakt))
+```
+
+Der so bestimmte Betrag darf den Lohnanteil der Rechnung nicht überschreiten.
+
+Tragen die Mietverhältnisse den vollständigen Rechnungsbetrag, entspricht ihre Gesamtsumme
+damit genau dem Lohnanteil der Rechnung. Verbleibt ein Teil der Kosten beim Vermieter, etwa
+wegen Leerstands oder Eigennutzung, verbleibt auch der entsprechende Anteil der Lohnkosten
+beim Vermieter.
+
+## 272.3 Verteilung auf einzelne Mietverhältnisse
+
+Der gerundete Gesamtbetrag der Mietverhältnisse wird anschließend nach demselben
+Restverfahren (Hare / Largest Remainder) verteilt, das auch für die Kostenverteilung
+verwendet wird. Der exakte proportionale Lohnkostenanteil eines Mietverhältnisses richtet
+sich nach dessen bereits zugeordnetem Kostenanteil:
+
+```text
+MieterLohnExakt(i) = Lohnanteil × MieterKostenanteil(i) / Rechnungsbetrag
+```
+
+Das Verteilungsverfahren muss ganze Cent so zuordnen, dass gilt:
+
+```text
+Summe(MieterLohnanteile) = MieterLohnGesamt
+```
+
+Durch Rundung entstehende Rest-Cent werden nach dem für die Kostenverteilung festgelegten
+Restverfahren vergeben. Haben zwei Mietverhältnisse denselben Rest, entscheidet die Kennung
+des Mietverhältnisses als deterministisches Tie-Break-Kriterium. Die Berechnung setzt daher
+die durch B2 festgelegte deterministische Reihenfolge voraus und erfolgt nach B2.
+
+## 272.4 Invarianten
+
+**Vorbedingung:** `0 <= Lohnanteil <= Rechnungsbetrag`. Die obere Grenze ist Voraussetzung
+für die erste Invariante; eine Kostenposition, die sie verletzt, ist ungültig und muss
+abgelehnt werden (heute prüft das nur das Eingabeformular, nicht der Server).
+
+Für jedes Mietverhältnis gilt:
+
+```text
+0 <= MieterLohnanteil <= MieterKostenanteil
+```
+
+Für jede Kostenposition gilt:
+
+```text
+Summe(MieterLohnanteile) <= Lohnanteil
+Summe(MieterLohnanteile) = min(Lohnanteil, kaufmännisch_gerundet(Lohnanteil × MieterKostenGesamt / Rechnungsbetrag))
+```
+
+Das Ergebnis darf nicht von der Reihenfolge abhängen, in der Mietverhältnisse oder
+Kostenanteile übergeben werden.
+
+## 272.5 Begründung der Rundungsregel
+
+Soweit derzeit bekannt, gibt es für diese konkrete centgenaue Verteilung im Rahmen des
+§ 35a EStG keine spezielle gesetzliche oder verwaltungsrechtliche Rundungsregel. Insbesondere
+ist keine Regel bekannt, nach der bei dieser Berechnung entstehende Bruchteile eines Cents
+stets abzurunden wären.
+
+Diese Spec legt die kaufmännische Rundung deshalb ausdrücklich als Teil des
+Berechnungsverfahrens fest. Die Entscheidung dient dazu,
+
+- auf den mathematisch nächstliegenden Cent zu runden,
+- eine systematische Abrundung zulasten der Mietverhältnisse zu vermeiden,
+- die Rundungslogik konsistent mit der sonstigen Abrechnung zu halten und
+- vor der eigentlichen Restverteilung einen eindeutigen, deterministischen Gesamtbetrag in
+  Cent festzulegen.
+
+Das Restverfahren verteilt anschließend lediglich diesen bereits bestimmten Centbetrag auf die
+einzelnen Mietverhältnisse, ohne weitere Cent zu erzeugen oder zu verlieren.
+
+Die kaufmännische Rundung ist damit eine Regel dieser Spec. Sie darf nicht als ausdrücklich
+durch § 35a EStG vorgeschriebene Rundungsmethode bezeichnet werden.
+
+## 272.6 Steuerlicher und abrechnungstechnischer Kontext
+
+Der §-35a-Betrag folgt der Verteilung der zugrunde liegenden Kosten. Die eigentliche
+Kostenverteilung wird durch dieses Verfahren nicht verändert.
+
+Soweit derzeit bekannt, enthalten weder § 35a EStG noch die einschlägigen
+Verwaltungsregelungen eine spezielle Vorgabe dazu, wie Bruchteile eines Cents zu behandeln
+sind, die bei dieser konkreten Aufteilung auf Mietverhältnisse entstehen. Kaufmännische
+Rundung und die gesonderte Behandlung von Rundungsdifferenzen sind jedoch in Abrechnungs- und
+Verteilungssystemen gebräuchliche Verfahren.
+
+Diese Spec legt die Rundung deshalb ausdrücklich fest, um ein deterministisches und
+summenerhaltendes Ergebnis zu erzielen und nicht von impliziten oder
+implementierungsabhängigen Rundungsregeln abhängig zu sein.
+
+## 272.7 Erforderliches Fixture
+
+Mindestens ein von Hand nachvollziehbares Fixture (spec-first, §55, §73) muss folgende Fälle
+abdecken:
+
+- eine Rechnung mit Lohnkostenanteil,
+- nur ein Teil des Rechnungsbetrags entfällt auf Mietverhältnisse,
+- der exakte Gesamtbetrag der Mieter-Lohnkosten enthält vor der Rundung einen Bruchteil
+  eines Cents,
+- mindestens zwei Mietverhältnisse,
+- mindestens ein Rest-Cent muss verteilt werden,
+- bei Bedarf ein Gleichstand, der über die Kennung des Mietverhältnisses aufgelöst wird.
+
+Die `README.md` des Fixtures muss mindestens folgende Zwischenschritte ausweisen:
+
+1. Rechnungsbetrag,
+2. Lohnkostenanteil,
+3. Kostenanteil je Mietverhältnis,
+4. Summe der auf Mietverhältnisse entfallenden Kosten,
+5. exakter Gesamtbetrag der Mieter-Lohnkosten vor Rundung,
+6. gerundeter Gesamtbetrag der Mieter-Lohnkosten,
+7. exakter proportionaler Lohnkostenanteil je Mietverhältnis,
+8. Cent-Zuordnung vor Verteilung der Reste,
+9. Reihenfolge der Reste,
+10. endgültiger §-35a-Betrag je Mietverhältnis.
+
+## 272.8 Property Tests
+
+Die Implementierung prüft zusätzlich mindestens folgende Eigenschaften:
+
+- Die insgesamt bescheinigten Lohnkosten überschreiten niemals den Lohnanteil der Rechnung.
+- Tragen die Mietverhältnisse den vollständigen Rechnungsbetrag, entspricht die Summe ihrer
+  §-35a-Beträge exakt dem Lohnanteil der Rechnung.
+- Kein Mietverhältnis erhält einen negativen §-35a-Betrag.
+- Kein Mietverhältnis erhält mehr §-35a-Lohnkosten als seinen zugeordneten Kostenanteil.
+- Die Eingabereihenfolge beeinflusst das Ergebnis nicht.
+- Die eigentliche Kostenverteilung bleibt unverändert.
+- Die Summe der einzelnen §-35a-Beträge entspricht exakt dem gerundeten Gesamtbetrag der
+  Mietverhältnisse.
+
+Ein Prototyp auf Basis von v0.3.0 hat alle diese Eigenschaften am 19.09.2026 gegen 500.000
+zufällig erzeugte Kostenpositionen ohne Verstoß erfüllt; jede §-35a-Zeile wich dabei höchstens
+1 ct von der bisherigen Einzelrundung ab, und alle zehn Golden-Master-Fixtures blieben
+unverändert.

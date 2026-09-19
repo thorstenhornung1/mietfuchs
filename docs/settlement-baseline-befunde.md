@@ -94,7 +94,7 @@ Meldung „keine Verteilbasis für Schlüssel …“.
 
 ## B4 — Der §35a-Lohnanteil hat keine Summengarantie
 
-**Status: offener fachlicher Punkt, Verhalten unverändert eingefroren** · Fixture F08
+**Status: fachlich entschieden (Spec §272), Umsetzung upstream nach B2** · Fixture F08
 
 Der begünstigte Lohnanteil wird je Abrechnungszeile einzeln proportional gerundet:
 
@@ -112,6 +112,15 @@ Fachlich zu klären, bevor der Steuer-Layer gebaut wird (M10, Invariante 21 —
 exakt dem Rechnungsbetrag entsprechen? Für den einzelnen Mieter ist die Abweichung
 unerheblich, für eine Gesamtaufstellung gegenüber dem Finanzamt möglicherweise nicht.
 Bis zur Klärung bleibt das heutige Verhalten Baseline.
+
+**Entscheidung (19.09.2026):** Die Summe der bescheinigten Lohnanteile darf den Lohnanteil der
+Rechnung nie übersteigen. Tragen die Mieter die Position vollständig, muss sie ihm centgenau
+entsprechen. Das Verfahren steht in Spec §272. Die Mietersumme wird kaufmännisch gerundet und
+auf den Lohnanteil begrenzt, dann per Restverfahren mit dem Tie-Break aus B2 verteilt.
+
+Anlass war ein Fall aus Upstream (speedone/mietfuchs#7): Dort bescheinigten die Mieteranteile
+1 ct mehr, als die Rechnung enthielt. Nachgestellt: 3 × 100,00 € mit 200,00 € Lohnanteil ergibt
+3 × 66,67 € = 200,01 €. Die Abweichung geht also auch nach oben, nicht nur nach unten.
 
 ---
 
