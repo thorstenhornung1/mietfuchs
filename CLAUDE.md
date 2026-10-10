@@ -9,6 +9,12 @@ Alles läuft auf dem eigenen Rechner — keine Cloud, kein Konto. Sprache von UI
 Domänenbegriffen ist durchgängig **Deutsch**; bitte beibehalten. Bezeichner im Code sind dagegen
 **englisch** (siehe Konventionen).
 
+**Mietfuchs Next (Fork, Branch `next`):** Für die Arbeit an diesem Fork ist
+[docs/mietfuchs-next-kanon.md](docs/mietfuchs-next-kanon.md) bindend — 140 Invarianten,
+Prioritätssystem und PR-Checkliste, gestützt auf die vier `docs/mietfuchs-next-*.md`-Specs.
+**Vor jeder Änderung dort nachschlagen, nicht danach.** Was nur der Fork braucht, kommt in
+eigene Dateien; Upstream-Dateien so wenig wie möglich ändern (Abgleich mit `upstream/main`).
+
 ## Commands
 
 Vom Repo-Root (npm-Workspaces-artiges Setup ohne echte Workspaces — `postinstall` installiert
