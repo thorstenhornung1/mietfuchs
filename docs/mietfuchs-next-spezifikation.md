@@ -5836,3 +5836,41 @@ Ein Prototyp auf Basis von v0.3.0 hat alle diese Eigenschaften am 19.09.2026 geg
 zufällig erzeugte Kostenpositionen ohne Verstoß erfüllt; jede §-35a-Zeile wich dabei höchstens
 1 ct von der bisherigen Einzelrundung ab, und alle zehn Golden-Master-Fixtures blieben
 unverändert.
+
+---
+
+# 273. Addendum: Persistenz über die Upstream-Implementierung
+
+## 273.1 Entscheidung
+
+Seit v0.8 führt speedone/mietfuchs SQLite selbst: Schema und Migrationen über drizzle-orm
+(`server/src/db/schema.ts`, `server/drizzle/`), Treiber `node:sqlite` bzw. `bun:sqlite` über
+den sqlite-proxy, Umstieg aus der `db.json` mit cent-genauer Regression
+(`server/src/db/changeover.ts`, `regression.ts`). Mietfuchs Next übernimmt diese
+Implementierung. Die eigene Persistenzschicht des Forks (treiberloser SQLite-Adapter,
+`LegacyJsonRepository`, Monorepo mit `packages/domain`) entfällt; ihr Stand ist im Tag
+`archiv/next-eigene-persistenz` erhalten.
+
+Begründung: Invariante 108 (eine Datenbankanbindung nur, wenn der Nutzen die dauerhaften
+Migrations- und Testkosten rechtfertigt) gilt sinngemäß für eine zweite Implementierung
+desselben Backends. Zwei parallele SQLite-Schichten in Fork und Upstream hätten jeden
+Abgleich verteuert, ohne fachlichen Mehrwert.
+
+## 273.2 Was sich gegenüber §271 ändert
+
+- §271.17 (PR-Pfad nach Upstream): PR 2–5 (TypeScript, Repository, SQLite-Adapter,
+  Migration) sind durch Upstream erledigt und entfallen.
+- Prisma (§271, „Prisma bleibt zunächst zulässig“) ist nicht mehr vorgesehen. Das
+  Persistenzwerkzeug ist drizzle-orm, wie in Upstream. Die Grenze bleibt dieselbe: Die
+  Berechnung liest nur einen Schnappschuss (`server/src/snapshot.ts`) und importiert keinen
+  Datenbanktreiber (Invariante 109).
+- PostgreSQL (§271, Invarianten 103–106) wird als zweites drizzle-Schema (pg-core) an
+  derselben Grenze gebaut und mit Upstream abgestimmt (speedone/mietfuchs#55), nicht als
+  Fork-eigene Schicht. Abnahme wie §271.26: Prüfkatalog und Invarianten auf beiden Backends
+  cent-genau gleich.
+
+## 273.3 Was unverändert gilt
+
+Alle Invarianten, §271.26 (keine backend-spezifischen Golden Results, jede relevante
+Sortierung explizit) und §271.19 (Zero-Config-Umstieg aus der `db.json`, den Upstream
+umsetzt).

@@ -18,12 +18,13 @@ will, ändert zuerst die Spezifikation — nicht den Code.
 
 | Dokument | Umfang | Rolle |
 |---|---|---|
-| [mietfuchs-next-spezifikation.md](mietfuchs-next-spezifikation.md) | §1–§272 | Technische Referenz: Datenmodell, Accounting, Steuer, Betrieb, Persistenz |
+| [mietfuchs-next-spezifikation.md](mietfuchs-next-spezifikation.md) | §1–§273 | Technische Referenz: Datenmodell, Accounting, Steuer, Betrieb, Persistenz |
 | [mietfuchs-next-produktspezifikation.md](mietfuchs-next-produktspezifikation.md) | §0–§60 | Produkt & Prozess: Vision, Betriebsmodelle, Nutzerprozesse |
 | [mietfuchs-next-technischer-bestand.md](mietfuchs-next-technischer-bestand.md) | §0–§92 | Technischer Bestand, Gebäudezustand, Lebenszyklus |
 | [mietfuchs-next-priorisierung.md](mietfuchs-next-priorisierung.md) | §0–§127 | Priorisierung, Implementierungsreihenfolge, Scope-Abschluss |
 
 Bei Widerspruch gilt die jüngere Festlegung: §271 revidiert §39/§71 (SQLite als Local-Mode-Default),
+§273 revidiert §271 (Persistenz über die Upstream-Implementierung mit drizzle-orm),
 die Priorisierungsspec revidiert die Produktspec bei OIDC (Auth ist Foundation, auch lokal).
 
 ## Invarianten 1–140
