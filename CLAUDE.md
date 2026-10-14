@@ -12,8 +12,9 @@ Domänenbegriffen ist durchgängig **Deutsch**; bitte beibehalten. Bezeichner im
 **Mietfuchs Next (Fork, Branch `next`):** Für die Arbeit an diesem Fork ist
 [docs/mietfuchs-next-kanon.md](docs/mietfuchs-next-kanon.md) bindend — 140 Invarianten,
 Prioritätssystem und PR-Checkliste, gestützt auf die vier `docs/mietfuchs-next-*.md`-Specs.
-**Vor jeder Änderung dort nachschlagen, nicht danach.** Was nur der Fork braucht, kommt in
-eigene Dateien; Upstream-Dateien so wenig wie möglich ändern (Abgleich mit `upstream/main`).
+**Vor jeder Änderung dort nachschlagen, nicht danach.** Die Reihenfolge der Arbeit gibt seit
+14.10.2026 die Phasenfolge 0–8 in [docs/mietfuchs-next-roadmap.md](docs/mietfuchs-next-roadmap.md)
+vor. Was nur der Fork braucht, kommt in eigene Dateien; Upstream-Dateien so wenig wie möglich ändern (Abgleich mit `upstream/main`).
 **Echte Daten sind tabu** (Kanon, gleichnamiger Abschnitt): nie aus Datenordnern, Datenbanken,
 Uploads oder Datenrouten einer Instanz mit Nutzerdaten lesen, nur gegen eigene Wegwerf-Server
 mit erfundenen Daten prüfen, und nichts, was der Nutzer zeigt, in Repo, PR oder Issue übernehmen.

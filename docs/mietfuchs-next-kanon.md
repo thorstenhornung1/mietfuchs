@@ -348,7 +348,17 @@ Neue Features werden primär durch reale End-to-End-Szenarien legitimiert.
 
 ## Implementierungsreihenfolge (Priorisierung §104)
 
-Die Reihenfolge folgt Abhängigkeiten, nicht Sichtbarkeit:
+**Seit 14.10.2026 gilt die Phasenfolge 0–8 aus [mietfuchs-next-roadmap.md](mietfuchs-next-roadmap.md)**
+(Implementierungsentscheidungen des Projektinhabers, Ausgangspunkt Kontoauszugsimport). Sie
+revidiert die folgende Reihenfolge dort, wo sie abweicht: Der operative Alltag mit
+Mieterhöhung (Phase 4) kommt vor dem Tax Layer (Phase 5) und vor dem umfassenden technischen
+Bestands- und Accounting-Ausbau; der Vorjahres-Anlage-V-Import (Phase 3) ist neu. Auth/OIDC
+(Schritte 5–6) steht nicht vor den Phasen, weil der Inhaber den Zugang vorerst über einen
+Reverse Proxy schützt; Zugriffsschutz bleibt in jeder Phase zu berücksichtigen. Wo die
+Roadmap nichts festlegt, bleibt die Liste unten Orientierung; die Zuordnung der Schritte zu
+den Phasen steht in deren Abschnitt 5.
+
+Bisherige Reihenfolge — sie folgt Abhängigkeiten, nicht Sichtbarkeit:
 
 ```text
  1. Architektur-Foundation          10. CAMT                      19. Mieterwechsel / Kaution
