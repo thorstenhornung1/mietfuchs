@@ -305,7 +305,9 @@ Mieternamen, Beträge, IBANs).
 3. **Nie in Repo, PR oder Issue:** Was der Nutzer gezeigt oder berichtet hat, wird nicht in
    Code, Tests, Fixtures, Commit-Nachrichten, PR-Texte, Issues oder Kommentare übernommen, auch
    nicht anonymisiert oder „nur als Zahl“. Fixtures sind erfunden; IBANs darin haben absichtlich
-   die Prüfziffer `00` (nach ISO 13616 nie gültig).
+   die Prüfziffer `00` (nach ISO 13616 nie gültig). Technisch abgesichert durch
+   `server/test/no-real-ibans.test.ts`: Er meldet jede IBAN mit gültiger Prüfziffer in den
+   Dateien des Repos, ausgenommen eine kurze Liste öffentlicher Beispiel-IBANs mit Quelle.
 4. **Vor jedem Commit und jedem PR:** den Diff auf IBANs mit gültiger Prüfziffer, Namen,
    Adressen und Dateinamen aus Tests des Nutzers durchsehen.
 5. **Zum Testen mit echten Daten gibt es Werkzeuge, die der Nutzer selbst bedient** (lokale
