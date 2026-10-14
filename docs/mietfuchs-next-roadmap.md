@@ -139,11 +139,11 @@ bzw. in der Priorisierungsspezifikation.
 | 0 | Bankabgleich abschließen | **#8** (#41, #42, #43), **#7** (#38, #39, #40); Vorbereitung Mahnung #279; Upstream-Beitrag speedone/mietfuchs#188 | 9 Charges/Payments, 10 CAMT |
 | 1 | Rechnungen und Ausgaben | **#10** (#48, #49, #50, #107, #108, #109); Achsen Kostenart/Steuer #45 | 11 VendorInvoice/Expense |
 | 2 | Betriebskosten | **#206** (#220, #221, #222, #223), **#207** (#224, #225, #226, #227) | 12 Betriebskosten-Domäne, 13 Settlement Lifecycle |
-| 3 | Vorjahres-Anlage-V-Import | kein eigenes Issue; Berührung mit #205/#218 (Onboarding, Steuer-Grundfragen) und #135 (Anfangsbestände) | neu (am ehesten 8 Onboarding) |
+| 3 | Vorjahres-Anlage-V-Import | **#280**; Berührung mit #205/#218 (Onboarding, Steuer-Grundfragen) und #135 (Anfangsbestände) | neu (am ehesten 8 Onboarding) |
 | 4 | Operativer Alltag, Mieterhöhung | **#115** (Kern: #140, #141, #143, #144; #142, #145, #146 ohne Festlegung), **#120**; RentAdjustment #36; Marktmiete-Datenpunkte #95 (Unterpunkt von #73) | 14 Operational Core (bisher nach 13); Mieterhöhung bisher ohne eigenen Schritt |
 | 5 | Tax Layer | **#68** (#77, #78, #79, #80) | 21 Tax Core |
 | 6 | Steuerliche Anfangsbestände und Sonderfälle | **#12** (#57, #58, #59), #270 (#271), **#69** (#81–#84), **#71** (#88–#90), #70 (#85–#87), #72 (#91–#94), #73 (#95–#97), #74 (#98–#100), #135, #106 | 20 Loan/Refinanzierung, 21 Tax Core (AfA), 22 konditionale Tax-Funktionen |
-| 7 | Anlage-V-Datenpaket | **#76** (#103, #104, #105); versioniertes Formular-Mapping ohne eigenes Issue | Teil von 21/22 |
+| 7 | Anlage-V-Datenpaket | **#76** (#103, #104, #105), versioniertes Formular-Mapping **#281** | Teil von 21/22 |
 | 8 | Jahrescheck | **#209** (#232, #233, #234) | 23 Annual Completeness Check |
 
 ### Was die Phasen gegenüber §104 verschieben
@@ -157,9 +157,10 @@ bzw. in der Priorisierungsspezifikation.
   Zugang vorerst über einen Reverse Proxy; „Zugriffsschutz“ bleibt nach Abschnitt 3 in jeder
   Phase zu berücksichtigen.
 
-### Nicht in den Phasen 0–8 geregelt
+### Nach Phase 8
 
-Für diese Bereiche legt die Entscheidung keine Position fest; ihre Einordnung ist offen:
+Diese Bereiche folgen, wenn die Phasen 0–8 abgearbeitet sind (Entscheidung des Inhabers vom
+14.10.2026); ihre Reihenfolge untereinander wird dann festgelegt:
 technischer Bestand und Lebenszyklus (#11, #246–#252, §104 Schritte 15/17), ServiceContracts
 (#128, Schritt 18), Mieterwechsel und Kaution (#116, #211, Schritt 19), doppisches Journal und
 DATEV (#13, #14), PostgreSQL-Betrieb (#3), Backup/Restore über das Bestehende hinaus (#137,
