@@ -5874,3 +5874,126 @@ Abgleich verteuert, ohne fachlichen Mehrwert.
 Alle Invarianten, §271.26 (keine backend-spezifischen Golden Results, jede relevante
 Sortierung explizit) und §271.19 (Zero-Config-Umstieg aus der `db.json`, den Upstream
 umsetzt).
+
+---
+
+# 274. Addendum: Bankabgleich, Kontoarten und Mischkonto
+
+**Stand:** 14.10.2026 · Status: Entscheidung des Projektinhabers nach steuerlicher und
+GoBD-Prüfung. Ausführung in
+[mietfuchs-next-architektur.md](mietfuchs-next-architektur.md) (Fassung 2). Revidiert §13 beim
+Duplikatschlüssel und insoweit §12, T60 aus §49 und §76.
+
+## 274.1 Entscheidung
+
+Der Kontoauszugsimport (Phase 0) wird als Beitrag zu speedone/mietfuchs#188 in einzelnen PRs
+gebaut: 1 Leser (fertig), 2 Schema und Import, 3 Zuordnung und Buchen, 4 Oberfläche. Die
+Migration folgt erst nach den Heizungs-Migrationen von Upstream (bis 0055). Fork-eigenes (Tax
+Layer, Journal, Anlage-V-Paket) bleibt in Fork-Dateien.
+
+Ein Kontoumsatz ist ein Fachbeleg und keine Zahlung (Invariante 5). Zur Zahlung wird er nur über
+eine bestätigte Verknüpfung; `payments` bleibt unverändert.
+
+## 274.2 Kontoarten
+
+| Kontoart | Einzeln gespeichert | Summen und Salden |
+|---|---|---|
+| Mietkonto (`rental`) | alle Umsätze | Tagessummen, Tagesendsaldo |
+| Mischkonto (`mixed`) | nur Vermietungsumsätze | Tagessummen, Tagesendsaldo; Saldenkette Pflicht |
+| Privatkonto (`private`) | nur bestätigt zugeordnete Mieteingänge | keine; nur der durchsuchte Zeitraum |
+
+Ein unbekanntes Konto wird mit Rückfrage angelegt, Voreinstellung Mischkonto. Die Kontoart gilt
+ab dem nächsten Import; welche bei einem Tag galt, steht am Tag.
+
+## 274.3 Was gespeichert wird
+
+`bank_accounts`, `bank_imports` (Datei-Hash, Format, Erstellzeitpunkt, Programmversion; kein
+Dateiname, kein Inhalt), `bank_days` (je Konto und abgeschlossenem Kalendertag im
+Auszugszeitraum, auch ohne Umsatz: Kontoart des Tages, Anzahl, Haben, Soll, Tagesendsaldo,
+Auszugsnummer), `bank_transactions` (nur die einzeln zu speichernden Umsätze), bestätigte
+`bank_transaction_links` (Aufhebung per Gegenlink, nie Änderung), `tenancy_payers`,
+`payment_allocations` (Monatszuordnung an der Zahlung) und das anhängende Protokoll
+`bank_events`.
+
+**Forderungen werden in Inkrement 1 nicht gespeichert** (Abweichung von §12): Das Monats-Soll
+bleibt aus den Staffeln abgeleitet, und `payment_allocations` verweist auf den
+Forderungsschlüssel (Mietverhältnis, Monat, Bestandteil) statt auf eine `chargeId`. Werden
+Forderungen später gespeichert, ist die Abbildung eindeutig.
+
+Der private Rest eines Mischkontotags wird abgeleitet (Tagessumme minus gespeicherte Umsätze),
+nicht gespeichert.
+
+## 274.4 Tagesabgleich statt eindeutigem `importHash`
+
+§13 sah `BankTransaction.importHash` mit `@@unique([bankAccountId, importHash])` vor, T60 aus
+§49 die Deduplizierung „über externe Referenz bzw. stabilen `importHash`“. Beides wird insoweit
+ersetzt:
+
+- Ein eindeutiger Hash je Umsatz ist fachlich falsch (zwei gleiche Überweisungen an einem Tag
+  sind zwei Umsätze) und für private Umsätze datenschutzrechtlich abgelehnt.
+- Die Identität eines gespeicherten Umsatzes ist **(Konto, Buchungstag, Stelle im Tag)**. Der
+  Fingerabdruck bleibt, aber **nicht eindeutig**.
+- Die Einheit des Abgleichs ist der **abgeschlossene Buchungstag je Konto**. Ein bekannter Tag
+  gilt als bekannt, wenn Anzahl, Haben- und Sollsumme gleich sind und jeder gespeicherte Umsatz
+  des Tages in der Datei wiedergefunden wird. Ein abweichender bekannter Tag wird nie still
+  überschrieben, sondern vorgelegt (Invariante 84). Dieselbe Datei erkennt `bank_imports`
+  am SHA-256.
+- T60 lautet damit: Gleiche Datei zweimal → „schon eingelesen“; dieselben Tage aus einer anderen
+  Datei → 0 neue Umsätze; zwei gleiche Umsätze an einem Tag → 2 Umsätze.
+
+## 274.5 Saldenkette und abgeschlossene Tage
+
+Ein Tag ist abgeschlossen, wenn er vor dem Kalendertag der Dateierstellung und vollständig im
+Auszugszeitraum liegt; camt.054 begründet keinen Tag. Nicht abgeschlossene Tage werden nicht
+gespeichert. Der Anfangssaldo neuer Tage muss an den Tagesendsaldo des letzten bekannten Tages
+anschließen; ein Bruch ist eine Rückfrage. Auf Miet- und Mischkonten Pflicht.
+
+## 274.6 Bezug zu den Invarianten
+
+- **5** Umsatz ≠ Zahlung: eigene Tabellen, Verknüpfung nur bestätigt.
+- **19** idempotenter Import: Datei-Hash und Tagesabgleich.
+- **84** idempotent oder ausdrücklich bestätigt: abweichende Tage und Umsätze mit dem Finanzamt
+  werden vorgelegt.
+- **97** Dokumenteingang erzeugt nie ungeprüft einen Fachvorgang: Links und Zahlungen erst nach
+  Bestätigung, Planer als reine Funktion, Ausführung in einer Transaktion mit Prüfmarke.
+- **102** Kalendertag ≠ Zeitstempel: Buchungs- und Wertstellungstag als `YYYY-MM-DD`, Import und
+  Bestätigung als Zeitstempel in UTC.
+
+## 274.7 Datenschutz
+
+Private Umsätze eines Mischkontos gelangen weder in die Datenbank noch ins Backup. **Es werden
+keine Hashes privater Umsätze gespeichert**, auch kein HMAC und kein Digest über die
+Fingerabdrücke eines Tages; ein Digest ist nur flüchtig innerhalb eines Imports erlaubt. Das
+Protokoll enthält keine Namen, IBANs, Verwendungszwecke oder Freitexte, nur Datum, Betrag,
+Fundstelle (Auszugsnummer, Stelle im Tag) und einen Grund aus fester Auswahl. Bankdaten gehen nie
+an eine KI.
+
+## 274.8 GoBD-Haltung
+
+Für den privaten Vermieter gelten § 147 AO und die GoBD nicht unmittelbar. Mietfuchs ist
+**gebaut, als gälte § 146 Abs. 4 AO**: Bestätigte Verknüpfungen werden nicht geändert, sondern
+per Gegenlink aufgehoben; jede Änderung gespeicherter Umsätze (Tag ersetzen, Löschen, Wechsel
+der Kontoart) steht im Protokoll. Die Jahres-Kontoabstimmung ersetzt den Kontoauszug nicht; sie
+gilt erst als abgestimmt, wenn der Vermieter bestätigt, dass die Auszüge des Jahres vollständig
+vorliegen.
+
+Die Definition of Done in §76 verlangt „Tests mit echten anonymisierten Fixtures“. Das wird
+insoweit ersetzt: Fixtures sind **erfunden**, IBANs darin tragen die Prüfziffer `00` (Kanon,
+„Echte Daten sind tabu“).
+
+## 274.9 Inkrement-Grenze
+
+**Inkrement 1** (Phase 0): Kontoarten, die Tabellen aus 274.3, Tagesabgleich, abgeschlossene
+Tage, Saldenkette, Planen und Ausführen in einer Transaktion, Protokoll, Jahres-Kontoabstimmung,
+Hinweise in der Oberfläche. Umstufung eines gespeicherten Umsatzes zu privat nur, wenn er **nie
+eine bestätigte Zuordnung** hatte: Löschen mit Protokollzeile. Umsätze mit Zuordnung sind
+gesperrt („erst Zuordnung lösen“). „Reduzieren statt löschen“ gilt nicht beim Import.
+
+**Bekannte Lücke, Inkrement 2:** Reduktion zugeordneter Umsätze bei Umstufung zu privat (Inhalte
+Dritter geleert, Datum, Betrag und Fundstelle bleiben). Ebenfalls Inkrement 2: berichtigte
+Fassung des Ursprungsjahres (§ 153 AO), Nacherfassung aus dem PDF-Auszug gegen den Tagesrest,
+Zahlungswege je Mietverhältnis, Grund je offenem Soll-Monat, Klasse „Übertrag eigenes Konto“,
+gemischte Kosten.
+
+**Später** (fork-eigen): Tax Layer, Anlage-V-Paket, Verfahrensdokumentation, Export,
+Aufbewahrung und Löschkonzept (8 Jahre Voreinstellung, 10 Jahre wählbar).

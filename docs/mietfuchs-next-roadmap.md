@@ -32,6 +32,11 @@ Steuerberatungs- oder Buchhaltungssoftware entwickelt.
 CAMT-Import, Duplikaterkennung, Mietzahlungszuordnung, Teilzahlungen und offene Posten müssen
 zuverlässig funktionieren. Banktransaktionen und Zahlungen bleiben getrennte Vorgänge.
 
+*Umsetzung:* [Architektur Bankabgleich (Fassung 2)](mietfuchs-next-architektur.md) und
+Spezifikation §274. **Bekannte Lücke, Inkrement 2:** Ein gespeicherter Umsatz mit Zuordnung kann
+in Phase 0 nicht zu privat umgestuft werden („erst Zuordnung lösen“); die Reduktion statt Löschung
+folgt mit Inkrement 2.
+
 ### Phase 1 – Rechnungen und Ausgaben
 
 VendorInvoice, InvoiceLine und ExpenseAllocation einführen. Bestehende Belegverwaltung und
