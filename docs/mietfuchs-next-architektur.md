@@ -350,9 +350,16 @@ Kontoauszüge liegen vollständig vor: bestätigt am …, Ablageort: …
 
 „Lückenlos eingelesen“ heißt in Inkrement 1, dass alle fünf Prüfungen erfüllt sind:
 
-1. Abdeckung lückenlos. Eine Lücke zwischen zwei abgedeckten Tagen gilt nur dann als abgedeckt,
-   wenn der Saldo davor gleich dem danach ist **und** die Auszugsnummern lückenlos folgen
-   (Offener Punkt 8.9).
+1. Abdeckung lückenlos. Eine Lücke zwischen zwei abgedeckten Tagen gilt als **ohne Umsatz**, wenn
+   der Endsaldo davor gleich dem Anfangssaldo danach ist **und** entweder beide Tage aus camt.053
+   oder MT940 stammen und ihre Auszugsnummern (`ElctrncSeqNb`, `:28C:` ohne „0“) im selben Jahr
+   unmittelbar aufeinander folgen, oder ein einzelner Auszug die Lücke ausdrücklich über `FrToDt`
+   abdeckt. Am Jahreswechsel („letzte Nummer → 1“) nur, wenn die letzte Nummer des alten Jahres
+   vorliegt. Ohne verlässliche Nummer (camt.052, `:28C:0`) beweist ein gleicher Saldo nur, dass
+   sich die Lücke zu null saldiert, ein Paar +x/−x schließt er nicht aus: Die Lücke ist dann
+   „vermutlich ohne Umsatz“ und wird einmal zur Bestätigung vorgelegt. Ein abweichender Saldo ist
+   immer eine Lücke. Banken erzeugen Tagesauszüge in der Regel nur für Tage mit Umsatz; die
+   DK-Spezifikation (DFÜ-Abkommen Anlage 3, V3.8) regelt das nicht (8.9).
 2. Saldenkette geschlossen.
 3. Kein Eingang in `unclear`, kein Finanzamt-Umsatz unentschieden.
 4. Der Vermieter bestätigt: „Die Kontoauszüge 01.01.–31.12. liegen mir vollständig vor“, mit
@@ -501,8 +508,10 @@ Aus den Prüfungen ([?] bzw. [unsicher]):
 
 Aus dieser Fassung:
 
-9. Regel für Lücken zwischen Tagesauszügen (3.9 Nr. 1): Liefern Banken camt.053 nur für Tage mit
-   Umsätzen, an Testdateien mehrerer Banken (erfunden bzw. aus Spezifikationsbeispielen) prüfen.
+9. ~~Regel für Lücken zwischen Tagesauszügen~~ Recherchiert am 14.10.2026 und in 3.9 Nr. 1
+   festgelegt. Offen bleibt die Praxis einzelner Bankengruppen beim Leerauszug (keine öffentliche
+   Quelle); Pagination (`PgNb`, Zwischensalden `INTM`) wird vor der Prüfung zu einem Auszug
+   zusammengefasst.
 10. Erkennung von Finanzamt-Umsätzen: Stichwortliste gegen Fehlalarme und Lücken abwägen.
 11. ~~Lesart „ohne Zuordnung = nie ein bestätigter Link“ (3.7) bestätigen lassen.~~ Bestätigt am
     14.10.2026.
