@@ -282,6 +282,36 @@ Im Upstream-Layout entspricht das:
 > Eine geänderte Erwartung ist eine fachliche Entscheidung, kein Testfix. Sie gehört mit
 > Herleitung in die `README.md` des Fixtures und in [settlement-baseline-befunde.md](settlement-baseline-befunde.md).
 
+## Echte Daten sind tabu
+
+Gilt für jede Arbeit an diesem Repo, ausdrücklich auch für Claude und jeden Agenten. Anlass:
+Beim Test der Kontoauszug-Vorschau (#188) wurde eine Datenroute der Testinstanz aufgerufen, und
+deren Antwort zeigte eine IBAN aus dem Bestand des Vermieters. In einen Commit gelangte nichts,
+aber schon das Lesen war falsch.
+
+**Echte Daten** sind alles, was aus dem Bestand oder den Unterlagen des Vermieters stammt: die
+Datenordner jeder laufenden Instanz (z. B. `~/mietfuchs-testdaten`, `server/data/`), deren
+Datenbank, `db.json`, Belege und Backups, hochgeladene Kontoauszüge und Rechnungen, sowie
+alles, was der Nutzer selbst zeigt (Screenshots, anonymisierte Berichte, Dateinamen,
+Mieternamen, Beträge, IBANs).
+
+1. **Nicht lesen, nicht abfragen, nicht ausgeben.** Keine Datei aus einem fremden Datenordner
+   öffnen. Keine Datenroute einer Instanz aufrufen, die mit echten Daten läuft (`/api/…`);
+   erlaubt ist dort nur `/healthz`, und auch davon nur der Status, nicht der Inhalt. Eine
+   Werkzeug-Ausgabe, die Bestandsdaten zeigen könnte, wird nicht erzeugt.
+2. **Geprüft wird gegen einen eigenen Wegwerf-Server**: eigener Port, `NKA_DATA_DIR` auf einen
+   leeren Ordner, `CI=1`, `NKA_UPDATE_URL` auf einen geschlossenen Port (siehe Upstream-CLAUDE.md,
+   „Wer für eine Prüfung einen Server startet“), und nur mit erfundenen Daten.
+3. **Nie in Repo, PR oder Issue:** Was der Nutzer gezeigt oder berichtet hat, wird nicht in
+   Code, Tests, Fixtures, Commit-Nachrichten, PR-Texte, Issues oder Kommentare übernommen, auch
+   nicht anonymisiert oder „nur als Zahl“. Fixtures sind erfunden; IBANs darin haben absichtlich
+   die Prüfziffer `00` (nach ISO 13616 nie gültig).
+4. **Vor jedem Commit und jedem PR:** den Diff auf IBANs mit gültiger Prüfziffer, Namen,
+   Adressen und Dateinamen aus Tests des Nutzers durchsehen.
+5. **Zum Testen mit echten Daten gibt es Werkzeuge, die der Nutzer selbst bedient** (lokale
+   Prüfseite, anonymisierter Bericht). Ihr Ergebnis sieht Claude nur, wenn der Nutzer es
+   ausdrücklich weitergibt.
+
 ## Lizenz- und Dependency-Prinzipien (Spec §271.22–§271.24)
 
 - Bevorzugte Lizenzen: **MIT, Apache-2.0, BSD-2/3-Clause, ISC, PostgreSQL License.**

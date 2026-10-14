@@ -14,6 +14,9 @@ Domänenbegriffen ist durchgängig **Deutsch**; bitte beibehalten. Bezeichner im
 Prioritätssystem und PR-Checkliste, gestützt auf die vier `docs/mietfuchs-next-*.md`-Specs.
 **Vor jeder Änderung dort nachschlagen, nicht danach.** Was nur der Fork braucht, kommt in
 eigene Dateien; Upstream-Dateien so wenig wie möglich ändern (Abgleich mit `upstream/main`).
+**Echte Daten sind tabu** (Kanon, gleichnamiger Abschnitt): nie aus Datenordnern, Datenbanken,
+Uploads oder Datenrouten einer Instanz mit Nutzerdaten lesen, nur gegen eigene Wegwerf-Server
+mit erfundenen Daten prüfen, und nichts, was der Nutzer zeigt, in Repo, PR oder Issue übernehmen.
 
 ## Commands
 
