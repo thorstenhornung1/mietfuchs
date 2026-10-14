@@ -141,7 +141,7 @@ bzw. in der Priorisierungsspezifikation.
 
 | Phase | Inhalt | Fork-Issues (Haupt-Issue fett, Unterpunkte) | Bisherige Schritte §104 |
 |---|---|---|---|
-| 0 | Bankabgleich abschließen | **#8** (#41, #42, #43), **#7** (#38, #39, #40); Vorbereitung Mahnung #279; Upstream-Beitrag speedone/mietfuchs#188 | 9 Charges/Payments, 10 CAMT |
+| 0 | Bankabgleich abschließen | **#8** (#41, #42, #43), **#7** (#38, #39, #40); Vorbereitung Mahnung #279; Upstream-Beitrag speedone/mietfuchs#188, Voraussetzungen speedone/mietfuchs#280 (Art der Zahlung) und #281 (Übertrag, § 366 BGB) | 9 Charges/Payments, 10 CAMT |
 | 1 | Rechnungen und Ausgaben | **#10** (#48, #49, #50, #107, #108, #109); Achsen Kostenart/Steuer #45 | 11 VendorInvoice/Expense |
 | 2 | Betriebskosten | **#206** (#220, #221, #222, #223), **#207** (#224, #225, #226, #227) | 12 Betriebskosten-Domäne, 13 Settlement Lifecycle |
 | 3 | Vorjahres-Anlage-V-Import | **#280**; Berührung mit #205/#218 (Onboarding, Steuer-Grundfragen) und #135 (Anfangsbestände) | neu (am ehesten 8 Onboarding) |

@@ -5886,8 +5886,9 @@ Duplikatschlüssel und insoweit §12, T60 aus §49 und §76.
 
 ## 274.1 Entscheidung
 
-Der Kontoauszugsimport (Phase 0) wird als Beitrag zu speedone/mietfuchs#188 in einzelnen PRs
-gebaut: 1 Leser (fertig), 2 Schema und Import, 3 Zuordnung und Buchen, 4 Oberfläche. Die
+Der Kontoauszugsimport (Phase 0) wird als Beitrag zu speedone/mietfuchs#188 in kleinen PRs
+gebaut: 1 Leser (eingereicht), 2 Schema und Import, 3 Zuordnung und Buchen (setzt die Art der
+Zahlung nach speedone/mietfuchs#280 voraus), 4 Oberfläche. Die
 Migration folgt erst nach den Heizungs-Migrationen von Upstream (bis 0055). Fork-eigenes (Tax
 Layer, Journal, Anlage-V-Paket) bleibt in Fork-Dateien.
 
@@ -5901,8 +5902,12 @@ eine bestätigte Verknüpfung; `payments` bleibt unverändert.
 | Mietkonto (`rental`) | alle Umsätze | Tagessummen, Tagesendsaldo |
 | Mischkonto (`mixed`) | nur Vermietungsumsätze | Tagessummen, Tagesendsaldo; Saldenkette Pflicht |
 | Privatkonto (`private`) | nur bestätigt zugeordnete Mieteingänge | keine; nur der durchsuchte Zeitraum |
+| Kautionskonto (`deposit`) | nichts, wird in Inkrement 1 nicht eingelesen | keine |
 
-Ein unbekanntes Konto wird mit Rückfrage angelegt, Voreinstellung Mischkonto. Die Kontoart gilt
+Ein unbekanntes Konto wird mit Rückfrage angelegt, Voreinstellung Mischkonto; „Mietkonto“ nur nach
+ausdrücklicher Bestätigung. Das Kautionskonto (§ 551 Abs. 3 BGB) ist wirtschaftlich Geld des
+Mieters; Mietfuchs kennt nur seine IBAN, um die Umbuchung der Kaution dorthin zu erkennen. Ein
+späteres Einlesen (Stand samt Zinsen, Aufteilung beim Sammelkonto) ist offen und nie eine Einnahme. Die Kontoart gilt
 ab dem nächsten Import; welche bei einem Tag galt, steht am Tag.
 
 ## 274.3 Was gespeichert wird
@@ -5911,14 +5916,16 @@ ab dem nächsten Import; welche bei einem Tag galt, steht am Tag.
 Dateiname, kein Inhalt), `bank_days` (je Konto und abgeschlossenem Kalendertag im
 Auszugszeitraum, auch ohne Umsatz: Kontoart des Tages, Anzahl, Haben, Soll, Tagesendsaldo,
 Auszugsnummer), `bank_transactions` (nur die einzeln zu speichernden Umsätze), bestätigte
-`bank_transaction_links` (Aufhebung per Gegenlink, nie Änderung), `tenancy_payers`,
-`payment_allocations` (Monatszuordnung an der Zahlung) und das anhängende Protokoll
-`bank_events`.
+`bank_transaction_links` (Aufhebung per Gegenlink, nie Änderung), `tenancy_payers` und das
+anhängende Protokoll `bank_events`.
 
-**Forderungen werden in Inkrement 1 nicht gespeichert** (Abweichung von §12): Das Monats-Soll
-bleibt aus den Staffeln abgeleitet, und `payment_allocations` verweist auf den
-Forderungsschlüssel (Mietverhältnis, Monat, Bestandteil) statt auf eine `chargeId`. Werden
-Forderungen später gespeichert, ist die Abbildung eindeutig.
+**Forderungen und Monatszuordnungen werden in Inkrement 1 nicht gespeichert** (Abweichung von
+§12): Das Monats-Soll bleibt aus den Staffeln abgeleitet, und die Verteilung der Zahlungen auf
+Monate bleibt eine Rechnung in `rentLedger`; eine gespeicherte Zuordnung daneben wäre eine zweite
+Wahrheit. Verteilung nach § 366 BGB und Übertrag ins nächste Jahr werden zusammen in Upstream
+entschieden (speedone/mietfuchs#281). Guthaben und Nachzahlungen aus der Abrechnung sind Zahlungen der Art „Abrechnung“
+(speedone/mietfuchs#280), die Kaution ist nie eine Zahlung (Invariante 8): Ein Eingang wird nur
+als erhalten markiert (`depositStatus`).
 
 Der private Rest eines Mischkontotags wird abgeleitet (Tagessumme minus gespeicherte Umsätze),
 nicht gespeichert.
@@ -5973,8 +5980,8 @@ an eine KI.
 Für den privaten Vermieter gelten § 147 AO und die GoBD nicht unmittelbar. Mietfuchs ist
 **gebaut, als gälte § 146 Abs. 4 AO**: Bestätigte Verknüpfungen werden nicht geändert, sondern
 per Gegenlink aufgehoben; jede Änderung gespeicherter Umsätze (Tag ersetzen, Löschen, Wechsel
-der Kontoart) steht im Protokoll. Die Jahres-Kontoabstimmung ersetzt den Kontoauszug nicht; sie
-gilt erst als abgestimmt, wenn der Vermieter bestätigt, dass die Auszüge des Jahres vollständig
+der Kontoart) steht im Protokoll. Die Jahres-Kontoabstimmung ersetzt den Kontoauszug nicht; sie sagt
+höchstens „Konto lückenlos eingelesen“, nie „Einnahmen vollständig“, und gilt erst dann, wenn der Vermieter bestätigt, dass die Auszüge des Jahres vollständig
 vorliegen.
 
 Die Definition of Done in §76 verlangt „Tests mit echten anonymisierten Fixtures“. Das wird

@@ -1,6 +1,6 @@
 # Mietfuchs Next — Architektur Bankabgleich, Kontoarten und Mischkonto (Fassung 2)
 
-Stand: 14.10.2026 · Status: Architekturentscheidung, verbindlich zusammen mit
+Stand: 14.10.2026, Abstimmung mit Upstream eingearbeitet · Status: Architekturentscheidung, verbindlich zusammen mit
 [Spezifikation §274](mietfuchs-next-spezifikation.md) · Ergänzung zum
 [Kanon](mietfuchs-next-kanon.md) und zur [Roadmap](mietfuchs-next-roadmap.md) (Phase 0)
 
@@ -9,6 +9,14 @@ die Prüfung durch einen Steuerberater und eine GoBD-Prüfung sowie die Entschei
 Projektinhabers vom 14.10.2026 ein. Übernommene Änderungen tragen den Vermerk **(Prüfung StB)**
 bzw. **(Prüfung GoBD)**. Wo sich die Prüfungen widersprechen, gilt die strengere Lösung; der
 Widerspruch steht dann in einem Satz dabei.
+
+**Abstimmung mit Upstream (14.10.2026, speedone/mietfuchs#188):** Der Maintainer trägt die
+Kontoarten mit und hat vier Punkte geändert; sie sind eingearbeitet und tragen den Vermerk
+**(Upstream)**: Leser als eigener PR und danach kleine Schritte (3.1), keine Monatszuordnung im
+Import und keine Tabelle `payment_allocations` (3.3, 3.6), Guthaben und Nachzahlungen als Art der
+Zahlung nach speedone/mietfuchs#280 statt als eigene Link-Art (3.3), die Kaution nie in `payments`
+und ein Kautionskonto, das nicht eingelesen wird (3.2), und der Wortlaut „Konto lückenlos
+eingelesen“ (3.9).
 
 Gegliedert ist nach Inkrementen. **Inkrement 1** ist Phase 0 der Roadmap und wird upstream-fähig
 gebaut. **Inkrement 2** schließt die bekannten Lücken des ersten. **Später** steht, was an die
@@ -78,16 +86,15 @@ Prüfziffer `00` (Kanon, „Echte Daten sind tabu“).
 
 ### 3.1 Lieferweg
 
-Der Import ist ein Beitrag zu speedone/mietfuchs#188 und wird in einzelnen Schritten gebaut.
-**Eingereicht wird erst, wenn Umsätze einem Mietkonto zugeordnet werden können** (Entscheidung des
-Projektinhabers vom 14.10.2026): Der Leser allein bringt dem Vermieter nichts. Schritt 1 geht deshalb
-nicht als eigener PR nach Upstream, sondern zusammen mit 2 und 3.
+Der Import ist ein Beitrag zu speedone/mietfuchs#188 und wird in **kleinen PRs** gebaut, jeder mit
+eigener Durchsicht. Der Leser geht allein nach Upstream, obwohl er noch nichts bewirkt; der
+Maintainer wünscht das so **(Upstream)**, der Projektinhaber hat zugestimmt.
 
 | PR | Inhalt | Stand |
 |---|---|---|
-| 1 | Leser camt.052/053/054 und MT940: nur Fakten, Saldenprobe je Auszug, Befunde statt Raten, Fingerabdruck mit `FINGERPRINT_VERSION` | fertig |
+| 1 | Leser camt.052/053/054 und MT940: nur Fakten, Saldenprobe je Auszug, Befunde statt Raten, Fingerabdruck mit `FINGERPRINT_VERSION` | fertig, PR eingereicht |
 | 2 | Schema und Import: `bank_accounts`, `bank_imports`, `bank_days`, `bank_transactions`, `bank_events`; Planer und Ausführung des Imports | offen |
-| 3 | Zuordnung und Buchen: `bank_transaction_links`, `tenancy_payers`, `payment_allocations`; `rentLedger` liest Allocations | offen |
+| 3 | Zuordnung und Buchen: `bank_transaction_links`, `tenancy_payers`; setzt die Art der Zahlung voraus (speedone/mietfuchs#280) | offen |
 | 4 | Oberfläche: Import mit Rückfragen, Zuordnung, Jahres-Kontoabstimmung, Hinweise | offen |
 
 Die Migration kommt **erst nach den Heizungs-Migrationen von Upstream (bis 0055)**. Fork-eigenes
@@ -98,14 +105,24 @@ berührt die Tabellen dieses Abschnitts nur lesend.
 
 | Kontoart (`kind`) | Was einzeln gespeichert wird | Summen und Salden | Kontoabstimmung |
 |---|---|---|---|
-| `rental` Mietkonto | alle Umsätze | Tagessummen, Tagesendsaldo | vollständig möglich |
-| `mixed` Mischkonto | nur Vermietungsumsätze (3.5) | Tagessummen, Tagesendsaldo; Saldenkette Pflicht | vollständig möglich |
-| `private` Privatkonto | nur bestätigt zugeordnete Mieteingänge | keine; nur der durchsuchte Zeitraum | nie „vollständig“ |
+| `rental` Mietkonto | alle Umsätze | Tagessummen, Tagesendsaldo | „lückenlos eingelesen“ möglich |
+| `mixed` Mischkonto | nur Vermietungsumsätze (3.5) | Tagessummen, Tagesendsaldo; Saldenkette Pflicht | „lückenlos eingelesen“ möglich |
+| `private` Privatkonto | nur bestätigt zugeordnete Mieteingänge | keine; nur der durchsuchte Zeitraum | nie „lückenlos“ |
+| `deposit` Kautionskonto | nichts; eine Datei dieses Kontos wird in Inkrement 1 nicht eingelesen | keine | keine |
 
 Ein unbekanntes Konto wird mit der Rückfrage „Kontoart?“ angelegt, **Voreinstellung Mischkonto**,
-weil es am wenigsten speichert (Art. 25 Abs. 2 DSGVO). Die Kontoart gilt ab dem nächsten Import;
+weil es am wenigsten speichert (Art. 25 Abs. 2 DSGVO). Der Vermieter muss vor dem ersten Import nicht
+über die Kontoart nachdenken **(Upstream)**. „Mietkonto“ gilt nur nach ausdrücklicher Bestätigung
+(„Über dieses Konto laufen keine privaten Umsätze“), damit eine falsche Wahl nicht still Privates
+einzeln speichert; das Wechseln zurück bietet das Löschen nach 3.7 an. Die Kontoart gilt ab dem nächsten Import;
 welche bei einem Tag galt, steht am Tag (`bank_days.scope`). Wechsel Mietkonto → Mischkonto bietet
 an, gespeicherte Umsätze **ohne Zuordnung**, die nicht zur Vermietung gehören, zu löschen (3.7).
+
+Das **Kautionskonto** (§ 551 Abs. 3 BGB) ist wirtschaftlich Geld des Mieters, die Erträge stehen
+ihm zu und erhöhen die Sicherheit; Kontoinhaber ist meist der Vermieter als Treuhänder
+**(Upstream)**. Mietfuchs kennt in Inkrement 1 nur seine IBAN, damit die Umbuchung einer Kaution
+vom Mietkonto dorthin als `deposit_transfer` erkannt wird, weder Einnahme noch privat. Ein späteres
+Einlesen ist möglich und sinnvoll, aber nie als Einnahme (8.13).
 
 Beim Anlegen eines Mischkontos ein Satz, kein Dauerhinweis: „Ein eigenes Konto nur für die
 Vermietung ist nicht Pflicht, erleichtert aber den Nachweis gegenüber dem Finanzamt erheblich.“
@@ -117,7 +134,7 @@ Alle Beträge `integer` Cent, Kalenderdaten `text 'YYYY-MM-DD'`, Zeitstempel `te
 
 **`bank_accounts`** — das eigene Konto: `id` · `iban` NULL, eindeutig wenn gesetzt, normiert und nach
 ISO 13616 geprüft · `other_id` NULL (Kennung ohne IBAN; `CHECK(iban IS NOT NULL OR other_id IS NOT
-NULL)`) · `name` · `kind` `CHECK IN ('rental','mixed','private')` · `default_property_id` FK
+NULL)`) · `name` · `kind` `CHECK IN ('rental','mixed','private','deposit')` · `default_property_id` FK
 `properties` SET NULL (nur Vorbelegung) · `currency` `CHECK = 'EUR'` · `closed_on` NULL.
 
 **`bank_imports`** — eine Zeile je eingelesener Datei: `id` · `file_sha256` eindeutig („Diese Datei
@@ -155,17 +172,19 @@ Tagessumme minus Summe der gespeicherten Umsätze, getrennt nach Haben, Soll und
 | `bank_reference`, `end_to_end_id` NULL | Originalreferenzen (Spec §76) |
 | `reversal`; `batch_reference`, `batch_part`, `batch_parts`, `batch_total_cents` NULL | Rücklastschrift; aus camt.054 zerlegte Sammelbuchung, Summe = Sammler |
 | `fingerprint`, `fp_version` | **nicht eindeutig**, Index `(account_id, booking_date, fingerprint)` |
-| `class` `CHECK IN ('rent','tenant_out','tax_office','marked','unclear','other')` | warum er gespeichert ist; `vendor` folgt mit Phase 1, `own_transfer` mit Inkrement 2 |
+| `class` `CHECK IN ('rent','tenant_out','deposit_transfer','tax_office','marked','unclear','other')` | warum er gespeichert ist; `vendor` folgt mit Phase 1, `own_transfer` mit Inkrement 2 |
 | `dismissed_reason` NULL, `dismissed_at` NULL | „nicht relevant“ mit Grund aus fester Auswahl (z. B. Kaution auf falschem Konto) |
 
 `class='other'` gibt es nur auf dem Mietkonto (gespeichert, weil dort alles gespeichert wird).
 
 **`bank_transaction_links`** — die bestätigte Entscheidung Umsatz ↔ Fachobjekt: `id` (Quelle eines
 späteren Posting-Schlüssels) · `bank_transaction_id` FK **RESTRICT** **(Prüfung GoBD; Fassung 1:
-CASCADE)** · `kind` `CHECK IN ('rentPayment','depositReceipt','refund','reversal','fee')` ·
+CASCADE)** · `kind` `CHECK IN ('payment','depositReceipt','depositReturn','reversal','fee')` ·
 `amount_cents` ≠ 0, Vorzeichen wie der Umsatz, Summe der wirksamen Links ≤ Betrag · `payment_id` FK
-`payments` CASCADE NULL (wie mit Upstream vereinbart) · `tenancy_id` FK `tenancies` CASCADE NULL
-(Kaution und Erstattung sind keine Zahlung, Inv. 8) · `reverses_link_id` FK NULL ·
+`payments` CASCADE NULL (wie mit Upstream vereinbart; die Art der Zahlung, Miete oder Abrechnung,
+steht an der Zahlung nach speedone/mietfuchs#280, nicht am Link **(Upstream)**) · `tenancy_id` FK
+`tenancies` CASCADE NULL (Kaution ist keine Zahlung, Inv. 8; `depositReceipt` setzt
+`depositStatus`) · `reverses_link_id` FK NULL ·
 Herkunftsblock `origin` (`rule`/`manual`), `rule_version`, `confirmed_at`, `confirmed_by`
 (`local`). `CHECK` genau ein Ziel passend zur Art. **Es werden nur bestätigte Links gespeichert**;
 Vorschläge leben in der Vorschau. Ein bestätigter Link wird nie geändert oder gelöscht, sondern
@@ -181,14 +200,11 @@ stilles Hauptkonto. Gemerkt wird nur auf ausdrückliche Wahl, kein Name des Zahl
 (etwa ein Kassenzeichen des Jobcenters) nur, wenn der Vermieter sie selbst einträgt, weil sie den
 Sozialleistungsbezug offenlegt.
 
-**`payment_allocations`** — Monatszuordnung an der Zahlung: `id` · `payment_id` FK CASCADE ·
-`tenancy_id` FK CASCADE · `period` `'YYYY-MM'` · `component` `CHECK IN ('baseRent','advance',
-'flatRate')` NULL (NULL = Monatssoll gesamt) · `amount_cents` ≠ 0 · `basis` `CHECK IN
-('tenantStated','rule366','landlord')` · Herkunftsblock · eindeutig `(payment_id, tenancy_id,
-period, component)`. **Forderungen (`charges`) werden in Inkrement 1 nicht gespeichert**: Das Soll
-bleibt aus den Staffeln abgeleitet (`rentLedger`), die Allocation zeigt auf den
-Forderungsschlüssel (Mietverhältnis, Monat, Bestandteil). Werden `charges` später gespeichert
-(Spec §12), ist die Abbildung eindeutig und per Datenschritt nachziehbar.
+**`payment_allocations` entfällt** **(Upstream; Fassung 2 sah sie vor)**. Eine gespeicherte
+Monatszuordnung neben `rentLedger` wäre eine zweite Wahrheit, und § 366 Abs. 2 BGB heißt nicht
+einfach „ältester Monat zuerst“. Verteilung auf Monate und Übertrag ins nächste Jahr werden
+zusammen in `rentLedger` entschieden (speedone/mietfuchs#281). **Forderungen (`charges`) werden
+in Inkrement 1 nicht gespeichert**; das Soll bleibt aus den Staffeln abgeleitet.
 
 **`bank_events`** — das Protokoll des Bankabgleichs, nur anhängend (3.8).
 
@@ -262,18 +278,17 @@ Verwerfen ohne Speicherung, ohne KI und ohne Netzverkehr.
 Zweiter Schritt nach dem Muster der Belegbuchung: `planBankLinks` (rein) → Vorschau mit Ampel und
 Prüfmarke → Ausführen in einer Transaktion. Vorschlag aus `match.ts`: Referenz, gültiges
 Zahlerkonto, beendetes Konto nur bei passendem offenem Posten, Name; bei Mehrdeutigkeit kein
-Vorschlag. Ein Link `rentPayment` verknüpft eine vorhandene Zahlung („schon erfasst“) oder legt
-eine an und schreibt die Monatszuordnung:
+Vorschlag. Ein Link `payment` verknüpft eine vorhandene Zahlung („schon erfasst“) oder legt eine
+an, mit der Art **Miete** oder **Abrechnung** (Nachzahlung, Guthaben negativ) nach
+speedone/mietfuchs#280. **Eine Monatszuordnung schreibt der Import nicht** **(Upstream)**: Die
+Zahlung geht in `rentLedger` ein wie eine von Hand erfasste. Den Monat aus dem Verwendungszweck
+zeigt die Vorschau nur an.
 
-- Nennt der Mieter den Monat, gilt das (`tenantStated`, § 366 Abs. 1 BGB).
-- Sonst `rule366`: ältester offener fälliger Monat zuerst; **innerhalb eines Monats die
-  Vorauszahlung vor der Kaltmiete** **(Prüfung StB, [unsicher])**. Der Vermieter kann ändern
-  (`landlord`).
-- `rentLedger` nutzt vorhandene Allocations und fällt sonst auf die heutige Verteilung Jan → Dez
-  zurück; die Golden-Tests bleiben centgenau grün.
-
-Kautionseingänge werden als `depositReceipt` am Mietverhältnis verknüpft, nie als Miete (Inv. 8).
-Erstattungen an Mieter als `refund`, Rücklastschriften als `reversal` (Gegenlink).
+Eine Kaution fließt im Regelfall gar nicht über das Mietkonto (§ 551 Abs. 3 BGB, Kautionskonto).
+Kommt sie doch dort an, bietet die Zuordnung „Kaution als erhalten markieren“: Link
+`depositReceipt` am Mietverhältnis, setzt `depositStatus`, **keine Zahlung** (Inv. 8,
+**(Upstream)**). Die anschließende Umbuchung aufs Kautionskonto ist `deposit_transfer`. Eine
+Rückzahlung vom Mietkonto ist `depositReturn`. Rücklastschriften als `reversal` (Gegenlink).
 
 ### 3.7 Umstufung im ersten Inkrement
 
@@ -333,7 +348,7 @@ Ungeklärte Eingänge: 0 · Finanzamt-Umsätze vorgelegt: ja
 Kontoauszüge liegen vollständig vor: bestätigt am …, Ablageort: …
 ```
 
-„Abgestimmt“ heißt in Inkrement 1, dass alle fünf Prüfungen erfüllt sind:
+„Lückenlos eingelesen“ heißt in Inkrement 1, dass alle fünf Prüfungen erfüllt sind:
 
 1. Abdeckung lückenlos. Eine Lücke zwischen zwei abgedeckten Tagen gilt nur dann als abgedeckt,
    wenn der Saldo davor gleich dem danach ist **und** die Auszugsnummern lückenlos folgen
@@ -345,7 +360,9 @@ Kontoauszüge liegen vollständig vor: bestätigt am …, Ablageort: …
 5. Je Import ist `file_sha256` ausgewiesen; damit lässt sich die Identität einer aufbewahrten Datei
    beweisen **(Prüfung GoBD)**.
 
-Die Abstimmung behauptet **nie „Einnahmen vollständig“**, nur „Konto abgestimmt“: Belastbar wird
+Die Abstimmung behauptet **nie „Einnahmen vollständig“**, nur „Konto lückenlos eingelesen“
+**(Upstream)**: Mietfuchs sieht weder Barzahlungen noch ein zweites Konto, und eine Pflicht, die
+Vollständigkeit nachzuweisen, hat der private Vermieter nicht. Belastbar wird
 die Vollständigkeit der Einnahmen erst, wenn alle Zahlungswege je Mietverhältnis erklärt sind
 (Inkrement 2) **(Prüfung StB)**. Daneben zeigt das Mietkonto Soll und Ist je Mietverhältnis; ein
 fehlender Monat ist ein offener Posten. Privatkonten zeigen nur „durchsucht bis …“.
@@ -450,7 +467,8 @@ des Mietkontos.
 | Keine berichtigte Fassung eines Vorjahres | eine Abstimmung zeigt den heutigen Stand, nicht den erklärten | Inkrement 2 (4.2) |
 | Andere Zahlungswege und Gründe offener Monate fehlen | „Einnahmen vollständig“ wird nie behauptet | Inkrement 2 (4.4, 4.5) |
 | Kein Übertrag eigenes Konto | weitergeleitete Miete erscheint als unklarer Eingang | Inkrement 2 (4.6) |
-| Abrechnung liest Allocations nicht | tatsächlich geleistete Vorauszahlungen weiter über die Jahreskorrektur | Phase 2 |
+| Keine Monatszuordnung beim Import | `rentLedger` verteilt Jan → Dez ohne Übertrag ins nächste Jahr | speedone/mietfuchs#281 |
+| Kautionskonto wird nicht eingelesen | Kautionsstand samt Zinsen wird von Hand geführt | später (8.13) |
 | Umsatzsteueroption nicht unterstützt (Spec §82.13) | nur Hinweis, kein Paket | offen |
 | Finanzamt-Erkennung über Stichwörter | ein Finanzamt-Umsatz unter anderem Namen fällt als Ausgang ins Private | offen (8.10) |
 
@@ -476,7 +494,7 @@ Aus den Prüfungen ([?] bzw. [unsicher]):
 5. Entsprechende Geltung von § 147 Abs. 2, 5, 6 AO und die Frist im Rahmen des § 147a AO.
 6. Anspruch auf geschwärzte Privatkontoauszüge gegenüber dem Finanzamt (kein gesicherter Anspruch).
 7. Reihenfolge nach § 366 Abs. 2 BGB innerhalb eines Monats (Vorauszahlung vor Kaltmiete); keine
-   eindeutige BGH-Entscheidung.
+   eindeutige BGH-Entscheidung. Wird mit speedone/mietfuchs#281 entschieden.
 8. Weitere [unsicher] des Steuerberaters ohne Wirkung auf Inkrement 1: Pauschalen für
    Kontoführung, Maßstab für Dispozinsen bei Überschusseinkünften, Übergangsregeln für das
    Ausstellen von E-Rechnungen ab 2028.
@@ -490,3 +508,13 @@ Aus dieser Fassung:
     14.10.2026.
 12. Mit Upstream abstimmen: `RESTRICT` auf `bank_transaction_links.bank_transaction_id` (vereinbart
     war `CASCADE` auf die Zahlung, das bleibt) und das Protokoll `bank_events` als Teil von PR 2.
+13. **Kautionskonto später einlesbar** (Vorschlag des Projektinhabers, in #188 angesprochen). Trägt
+    für zwei Zwecke: den Stand der Kaution samt Zinsen führen, die bei Rückgabe mit auszuzahlen
+    sind (§ 551 Abs. 3 BGB), und beim Sammelkonto mehrerer Mieter die Zinsen je Mieter aufteilen,
+    weil der Vermieter sie für deren Steuer mitteilen bzw. feststellen lassen muss (§ 180 AO;
+    Zinsen sind Kapitalerträge des Mieters, § 20 Abs. 1 Nr. 7 EStG, § 39 Abs. 2 Nr. 1 AO). Nicht
+    tragend: Nachweis der getrennten Anlage (Bankbestätigung genügt), Steuerbescheinigung (steht
+    nicht im Auszug). Bedingungen: nie als Zahlung oder Einnahme, je Mietverhältnis, optional,
+    möglichst nur Saldo und Zinsgutschriften. Zu prüfen vor Zitat: Randziffer im BMF-Schreiben zu
+    Einzelfragen der Abgeltungsteuer (Mieterkautionen), Art. 229 § 3 Abs. 8 EGBGB (Altverträge vor
+    1983), Freistellungsauftrag auf Treuhandkonto.
