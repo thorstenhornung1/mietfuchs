@@ -78,7 +78,10 @@ Prüfziffer `00` (Kanon, „Echte Daten sind tabu“).
 
 ### 3.1 Lieferweg
 
-Der Import ist ein Beitrag zu speedone/mietfuchs#188 und wird in einzelnen PRs gebaut:
+Der Import ist ein Beitrag zu speedone/mietfuchs#188 und wird in einzelnen Schritten gebaut.
+**Eingereicht wird erst, wenn Umsätze einem Mietkonto zugeordnet werden können** (Entscheidung des
+Projektinhabers vom 14.10.2026): Der Leser allein bringt dem Vermieter nichts. Schritt 1 geht deshalb
+nicht als eigener PR nach Upstream, sondern zusammen mit 2 und 3.
 
 | PR | Inhalt | Stand |
 |---|---|---|
@@ -280,8 +283,9 @@ späterer Umstufung gespeicherter Umsätze, und kommt erst mit Inkrement 2.
 - **Vermietung → privat** geht in Inkrement 1 nur für Umsätze **ohne Zuordnung**. Der Umsatz wird
   gelöscht, nicht als „verworfen“ behalten (sonst stünde ein privater Datensatz im Bestand und im
   Backup), mit einer Protokollzeile nach 3.8.
-- „Ohne Zuordnung“ heißt: **nie ein bestätigter Link**, auch kein inzwischen aufgehobener. Das ist
-  die strengere Lesart; ein Umsatz mit Link-Geschichte ist eine verarbeitete Aufzeichnung, deren
+- „Ohne Zuordnung“ heißt: **nie ein bestätigter Link**, auch kein inzwischen aufgehobener
+  (vom Projektinhaber am 14.10.2026 bestätigt). Das ist die strengere Lesart; ein Umsatz mit
+  Link-Geschichte ist eine verarbeitete Aufzeichnung, deren
   Löschen die GoBD-Prüfung ausschließt.
 - Umsätze mit Zuordnung sind gesperrt: „Dieser Umsatz ist zugeordnet. Lösen Sie erst die
   Zuordnung.“ Ist die Zuordnung per Gegenlink gelöst, bleibt der Umsatz trotzdem gespeichert; er
@@ -482,6 +486,7 @@ Aus dieser Fassung:
 9. Regel für Lücken zwischen Tagesauszügen (3.9 Nr. 1): Liefern Banken camt.053 nur für Tage mit
    Umsätzen, an Testdateien mehrerer Banken (erfunden bzw. aus Spezifikationsbeispielen) prüfen.
 10. Erkennung von Finanzamt-Umsätzen: Stichwortliste gegen Fehlalarme und Lücken abwägen.
-11. Lesart „ohne Zuordnung = nie ein bestätigter Link“ (3.7) vom Projektinhaber bestätigen lassen.
+11. ~~Lesart „ohne Zuordnung = nie ein bestätigter Link“ (3.7) bestätigen lassen.~~ Bestätigt am
+    14.10.2026.
 12. Mit Upstream abstimmen: `RESTRICT` auf `bank_transaction_links.bank_transaction_id` (vereinbart
     war `CASCADE` auf die Zahlung, das bleibt) und das Protokoll `bank_events` als Teil von PR 2.
