@@ -174,7 +174,7 @@ Tagessumme minus Summe der gespeicherten Umsätze, getrennt nach Haben, Soll und
 | `fingerprint`, `fp_version` | **nicht eindeutig**, Index `(account_id, booking_date, fingerprint)` |
 | `class` `CHECK IN ('rent','tenant_out','deposit_transfer','tax_office','marked','unclear','other')` | warum er gespeichert ist; `vendor` folgt mit Phase 1, `own_transfer` mit Inkrement 2 |
 | `dismissed_reason` NULL, `dismissed_at` NULL | „nicht relevant“ mit Grund aus fester Auswahl (z. B. Kaution auf falschem Konto) |
-| `property_id` NULL FK `properties` SET NULL | Objekt-Dimension für Umsätze ohne Mietverhältnis (3.13); mit Link ergibt sie sich aus dem Mietverhältnis |
+| `property_id` NULL FK `properties` **RESTRICT** | Objekt-Dimension für Umsätze ohne Mietverhältnis (3.13); mit Link ergibt sie sich aus dem Mietverhältnis. RESTRICT wie die übrigen Verweise aufs Objekt: Die Dimension darf nicht still verloren gehen, ein Objekt mit eingelesenen Umsätzen wird nicht gelöscht |
 
 `class='other'` gibt es nur auf dem Mietkonto (gespeichert, weil dort alles gespeichert wird).
 
@@ -426,7 +426,8 @@ Was die gespeicherten Daten dafür hergeben müssen, und wo es steht:
    Mietverhältnis ergibt sie sich daraus (Mietverhältnis → Wohnung → Objekt), keine zweite
    Spalte. Ohne Mietverhältnis (`marked`, `tax_office`, `fee`, `deposit_transfer`) trägt der Umsatz
    ein Objekt (`bank_transactions.property_id`, vorbelegt aus `bank_accounts.default_property_id`,
-   änderbar) oder ausdrücklich „objektübergreifend“, das später nach Schlüssel verteilt wird.
+   änderbar) oder ausdrücklich „objektübergreifend“, das später nach Schlüssel verteilt wird. Wie
+   „objektübergreifend“ von „noch nicht zugeordnet“ unterschieden wird, entscheidet Schritt 3.
    Aufteilen auf mehrere Objekte geht über mehrere Teil-Links mit Summe = Betrag (Inv. 57).
 2. **Das Private eines Mischkontos getrennt nach Haben und Soll je Tag** (`bank_days`, schon so):
    Daraus entsteht je Tag oder Monat eine Buchung Privateinlage bzw. Privatentnahme gegen Bank,
