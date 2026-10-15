@@ -174,6 +174,7 @@ Tagessumme minus Summe der gespeicherten Umsätze, getrennt nach Haben, Soll und
 | `fingerprint`, `fp_version` | **nicht eindeutig**, Index `(account_id, booking_date, fingerprint)` |
 | `class` `CHECK IN ('rent','tenant_out','deposit_transfer','tax_office','marked','unclear','other')` | warum er gespeichert ist; `vendor` folgt mit Phase 1, `own_transfer` mit Inkrement 2 |
 | `dismissed_reason` NULL, `dismissed_at` NULL | „nicht relevant“ mit Grund aus fester Auswahl (z. B. Kaution auf falschem Konto) |
+| `property_id` NULL FK `properties` SET NULL | Objekt-Dimension für Umsätze ohne Mietverhältnis (3.13); mit Link ergibt sie sich aus dem Mietverhältnis |
 
 `class='other'` gibt es nur auf dem Mietkonto (gespeichert, weil dort alles gespeichert wird).
 
@@ -404,6 +405,48 @@ und ließe eine Vermutung über Empfänger und Zweck bestätigen; ein HMAC hilft
 Schlüssel nicht im Backup liegt, und dann ist er nach einer Wiederherstellung wertlos. Einen
 Vermietungseingang, der in zwei Dateien als privat eingeordnet wurde, fängt der Soll/Ist-Abgleich
 des Mietkontos.
+
+### 3.13 Buchhaltungsfähig bleiben: SKR, doppelte Buchführung, virtuelle Hauskonten
+
+**Vorgabe des Projektinhabers (15.10.2026):** Was Inkrement 1 speichert, muss später ohne
+Nacherfassung ein doppisches Journal nach SKR 03 oder SKR 04 ergeben (#13, #14, nach Phase 8).
+Upstream-Tabellen tragen dafür **keine Kontonummern**; kontiert wird im Fork über versionierte
+Buchungsregeln (Inv. 16, 42). Inkrement 1 muss nur sicherstellen, dass jede Buchung daraus
+eindeutig ableitbar ist.
+
+**Ein Hauskonto ist eine Sicht, kein Sachkonto** (Inv. 43): Ein Bankkonto ist ein Sachkonto der
+Gruppe „Bank“, das Objekt eine Dimension an jeder Buchungszeile. Das virtuelle Hauskonto ist das
+Bankkonto, gefiltert auf die Dimension eines Objekts. Das gilt genauso für Misch- und Privatkonten:
+Deren Vermietungsumsätze bilden das virtuelle Hauskonto, das Private läuft über das Privatkonto
+des Kapitals.
+
+Was die gespeicherten Daten dafür hergeben müssen, und wo es steht:
+
+1. **Jeder gespeicherte Umsatz hat eine Objekt-Dimension.** Mit Verknüpfung zu einem
+   Mietverhältnis ergibt sie sich daraus (Mietverhältnis → Wohnung → Objekt), keine zweite
+   Spalte. Ohne Mietverhältnis (`marked`, `tax_office`, `fee`, `deposit_transfer`) trägt der Umsatz
+   ein Objekt (`bank_transactions.property_id`, vorbelegt aus `bank_accounts.default_property_id`,
+   änderbar) oder ausdrücklich „objektübergreifend“, das später nach Schlüssel verteilt wird.
+   Aufteilen auf mehrere Objekte geht über mehrere Teil-Links mit Summe = Betrag (Inv. 57).
+2. **Das Private eines Mischkontos getrennt nach Haben und Soll je Tag** (`bank_days`, schon so):
+   Daraus entsteht je Tag oder Monat eine Buchung Privateinlage bzw. Privatentnahme gegen Bank,
+   und die Bank stimmt mit dem Kontoauszug. Saldiert ließe sich das nicht mehr trennen.
+3. **Mieteingang auf einem Privatkonto:** Das Privatkonto steht nicht im Hauptbuch; die Einnahme
+   wird gegen Privatentnahme gebucht (das Geld ging in die Privatsphäre). Dafür genügt der
+   gespeicherte Umsatz mit Link; die Kontoart sagt, welche Gegenbuchung gilt.
+4. **Umbuchung zwischen eigenen Konten** über Geldtransit (`own_transfer`, Inkrement 2), auch
+   zwischen Miet- und Mischkonto.
+5. **Kautionskonto:** Treuhandvermögen, nicht im Vermögen des Vermieters; die Kaution ist eine
+   Verbindlichkeit gegenüber dem Mieter, die Umbuchung dorthin (`deposit_transfer`) bucht gegen
+   diese Verbindlichkeit bzw. ein Verrechnungskonto, nie als Aufwand oder Ertrag.
+6. **Art der Zahlung** (Miete oder Abrechnung, speedone/mietfuchs#280) unterscheidet später
+   Mieterlöse und Umlagen.
+7. **Eine unveränderliche Quelle je Buchung:** Der bestätigte Link ist der Posting-Schlüssel;
+   aufgehoben wird per Gegenlink, nie durch Ändern (Inv. 55, 56, 59, 60).
+
+Beispiele für Konten nur zur Orientierung, vor Verwendung gegen den aktuellen Kontenrahmen zu
+prüfen: Bank SKR 03 1200 / SKR 04 1800, Privatentnahme 1800 / 2100, Privateinlage 1890 / 2180,
+Geldtransit 1360 / 1460.
 
 ---
 
