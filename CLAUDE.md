@@ -19,6 +19,30 @@ vor. Was nur der Fork braucht, kommt in eigene Dateien; Upstream-Dateien so weni
 Uploads oder Datenrouten einer Instanz mit Nutzerdaten lesen, nur gegen eigene Wegwerf-Server
 mit erfundenen Daten prüfen, und nichts, was der Nutzer zeigt, in Repo, PR oder Issue übernehmen.
 
+**Schreibrechte in speedone/mietfuchs (seit 17.10.2026, Collaborator).** Der Projektinhaber hat
+Schreibrechte im Upstream-Repo; Claude arbeitet dort nach diesen Regeln, ohne Ausnahme:
+
+- **Nichts nach außen ohne ausdrückliche Freigabe des Projektinhabers im jeweiligen Fall:** kein
+  Push, kein PR, kein Issue, kein Kommentar, kein Review, kein Label (auch nicht `full-check` oder
+  `ai-eval`), kein Meilenstein, keine Einladung, kein Schließen. Eine Freigabe gilt nur für das,
+  wofür sie gegeben wurde. Gewünschte Zeitfenster und Stapel („erst ab 18:30, gebündelt“) gelten.
+  Vorher den Text zeigen.
+- **Nie auf `main` pushen, nie mergen, nie Tags `v*` oder Releases anlegen, nie Rulesets,
+  Einstellungen, Secrets oder Workflows des Repos ändern.** Freigabe und Merge von `main` sind
+  speedones Sache („Approve“ nach seiner Durchsicht).
+- **Nur eigene Zweige pushen** (`feat/…`, `fix/…`, `docs/…`), keinen Zweig von speedone
+  verändern oder löschen. `--force-with-lease` nur auf eigenen Zweigen und nur, solange niemand
+  sonst darauf gearbeitet hat; hat speedone etwas angehängt, rebasen statt überschreiben. Eigene
+  Zweige erst nach dem Merge und mit Freigabe löschen.
+- **Vertrauliches bleibt privat:** Sicherheitsfunde nur über die private Sicherheitsmeldung, nie
+  als öffentlicher Zweig, PR oder Issue (GHSA-6fwm-fj3x-m49m, Zweig `fix/herkunft-host` bleibt
+  lokal, bis speedone den Weg festlegt). Keine internen Domains oder Daten des Projektinhabers.
+- **Vor jedem PR** die Durchsicht mit frischem Kontext (Abschnitt „Issues & Releases“), volle
+  Suiten grün, auf aktuellem `main`; Migrationsnummern bei Überschneidung neu erzeugen statt
+  umbenennen.
+- Der Fork (`thorstenhornung1/mietfuchs`, Zweig `next`) bleibt für Fork-Dokumente und lokale
+  Proben; neue Arbeit für Upstream geht nach Freigabe als Zweig direkt in speedone/mietfuchs.
+
 ## Commands
 
 Vom Repo-Root (npm-Workspaces-artiges Setup ohne echte Workspaces — `postinstall` installiert
